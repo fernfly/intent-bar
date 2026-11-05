@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Use the npm version devEngines asks for
+        run: |
+          version=$(node -p "require('./package.json').devEngines.packageManager.version")
+          cd "$RUNNER_TEMP" && npm install -g "npm@$version"
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - name: Bundle report
+        run: npm run size --silent >> "$GITHUB_STEP_SUMMARY"
+      - name: Install Chromium for the browser checks
+        run: npx playwright-core install --with-deps --only-shell chromium
+      - name: Browser checks on React 19
+        run: npm run smoke
+      - name: Browser checks on React 18
+        run: |
+          (cd "$RUNNER_TEMP" && npm install --prefix react18 --no-audit --no-fund react@18.3.1 react-dom@18.3.1)
+          REACT_FROM="$RUNNER_TEMP/react18/node_modules" npm run smoke

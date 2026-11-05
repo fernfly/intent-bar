@@ -508,6 +508,60 @@ async function withScriptTag(browser) {
   await page.close()
 }
 
+/** examples/vanilla, the copyable example: a filter from init(), an action answered through events, and theming. */
+async function withVanilla(browser) {
+  const mode = 'vanilla'
+  const page = await browser.newPage({ viewport: { width: 1100, height: 760 } })
+  const errors = []
+  page.on('pageerror', (e) => errors.push(e.message))
+  page.on('console', (m) => ['error', 'warning'].includes(m.type()) && errors.push(`${m.type()}: ${m.text()}`))
+  await page.addInitScript(installHelpers)
+  await page.goto(`http://127.0.0.1:${port}/examples/vanilla/`)
+  await page.waitForFunction(() => document.querySelector('fernfly-intent-bar'))
+  const t = (fn, arg) => page.evaluate(fn, arg)
+  const list = () => t(() => ({ summary: document.getElementById('summary').textContent, rows: document.querySelectorAll('#tasks li').length }))
+  const ask = async (sentence) => {
+    await page.keyboard.press('ControlOrMeta+k')
+    await page.waitForFunction(() => window.t.isOpen())
+    await page.keyboard.type(sentence)
+    await page.keyboard.press('Enter')
+    await page.locator('.chips').waitFor()
+    await page.waitForFunction(() => window.t.q('button.primary')?.disabled === false)
+  }
+
+  await ask('open tasks for ana')
+  const accent = await t(() => document.querySelector('fernfly-intent-bar').style.getPropertyValue('--fb-accent'))
+  await page.keyboard.press('Enter')
+  await page.waitForFunction(() => !window.t.isOpen())
+  const filtered = await list()
+  check(
+    mode,
+    'a filter passed to init() updates the page, and the accent comes from its --brand',
+    filtered.summary === '2 open tasks for Ana Silva' && filtered.rows === 2 && accent === 'var(--brand)',
+    `${JSON.stringify(filtered)} accent=${accent}`,
+  )
+
+  await ask("complete ana's tasks")
+  await page.keyboard.press('Enter')
+  await page.locator('.confirm').waitFor()
+  const title = await t(() => window.t.text('.confirm-title'))
+  await page.keyboard.press('Enter')
+  await page.locator('.toast button').waitFor()
+  const completed = await list()
+  await page.locator('.toast button').click()
+  await page.waitForFunction(() => document.querySelectorAll('#tasks li').length === 2)
+  check(
+    mode,
+    'an action answered through events confirms, runs and undoes',
+    title === 'Complete 2 tasks' && completed.rows === 0,
+    `${title} | after run: ${completed.summary}`,
+  )
+
+  const csp = await t(() => window.cspViolations)
+  check(mode, 'no CSP violations or page errors', csp.length === 0 && errors.length === 0, [...csp, ...errors].join(' | ').slice(0, 300))
+  await page.close()
+}
+
 /** The checks with the page palette off, so the bar takes ⌘K, as it would if it replaced Power K. */
 async function withoutPagePalette(browser, mode) {
   const h = await openPage(browser, mode, '&palette=off')
@@ -537,6 +591,7 @@ try {
     await withTriggers(browser, mode)
   }
   await withScriptTag(browser)
+  await withVanilla(browser)
 } finally {
   await browser.close()
   server.close()

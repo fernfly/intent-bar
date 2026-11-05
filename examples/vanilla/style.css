@@ -1,0 +1,69 @@
+/* The bar reads --brand for its accent, and takes its font and colours from the page. */
+:root {
+  --brand: #6d28d9;
+  color-scheme: light dark;
+}
+body {
+  margin: 0;
+  font: 15px/1.5 system-ui, sans-serif;
+  color: #1c1917;
+  background: #fafaf9;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --brand: #a78bfa;
+  }
+  body {
+    color: #e7e5e4;
+    background: #1c1917;
+  }
+}
+header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 16px;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 15%, transparent);
+}
+nav {
+  display: flex;
+  gap: 12px;
+}
+a {
+  color: var(--brand);
+}
+input {
+  flex: 1;
+  min-width: 160px;
+  padding: 6px 10px;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+  border-radius: 6px;
+}
+main {
+  max-width: 640px;
+  padding: 16px;
+}
+#tasks {
+  padding: 0;
+  list-style: none;
+}
+#tasks li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 10%, transparent);
+}
+#tasks li[data-status="done"] span:first-child {
+  text-decoration: line-through;
+  opacity: 0.6;
+}
+.meta,
+.hint {
+  font-size: 13px;
+  opacity: 0.7;
+}
