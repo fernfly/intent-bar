@@ -24,7 +24,7 @@ npm run test       # vitest (happy-dom)
 npm run harness    # serves examples/ at http://127.0.0.1:4319: the harness, its script-tag page, examples/vanilla
 npm run smoke      # browser checks in Chromium, after a build; REACT_FROM=<node_modules> runs the React page on another React
 npm run size       # the script-tag build's size and integrity hash, after a build
-npm run bump minor # patch, minor, major or an exact version: commits it on main and tags it, never pushes
+npm run bump auto  # or patch, minor, major, an exact version: commits it on main and tags it, never pushes
 ```
 
 The browser checks use Playwright's headless Chromium (`npx playwright-core install --only-shell chromium`), or the binary at `CHROMIUM_PATH`. CI runs them on React 19 and 18.3.
@@ -68,7 +68,7 @@ Node and npm are pinned by `.nvmrc` and `devEngines`.
 
 Pushing a tag `vX.Y.Z` runs `.github/workflows/release.yml`: it checks the tag against `package.json`, tests, builds, publishes to npm with provenance, and writes the GitHub release notes from `npm run size`, which give the pinned script tag and its integrity hash. It needs an `NPM_TOKEN` secret.
 
-To release, run `npm run bump <patch|minor|major|x.y.z>` on a clean `main`. It wraps `npm version`: the `preversion` hook in `scripts/version-hooks.mjs` refuses a private package, a prerelease, another branch or an existing tag, then runs typecheck and tests, and npm commits `chore: release vX.Y.Z` (package.json and the lockfile) and tags it. For the first release, remove `"private": true` in its own commit on `main` first. Nothing is pushed: `git push origin main vX.Y.Z` publishes, and tags are pushes, so only when the user asks.
+To release, run `npm run bump <patch|minor|major|x.y.z|auto>` on a clean `main`. `auto` reads the commits since the last `v*` tag: a breaking change (`!` or a `BREAKING CHANGE:` footer) is major, `feat` is minor, `fix` or `perf` is patch, and anything else alone releases nothing. Before 1.0 a breaking change is minor, so 1.0 takes an explicit `major`. `scripts/bump.mjs` hands the type to `npm version`, and as its `preversion` hook it refuses a private package, a prerelease, another branch or an existing tag, then runs typecheck and tests. npm then commits `chore: release vX.Y.Z` (package.json and the lockfile) and tags it. For the first release, remove `"private": true` in its own commit on `main` first. Nothing is pushed: `git push origin main vX.Y.Z` publishes, and tags are pushes, so only when the user asks.
 
 ## Commits
 

@@ -66,9 +66,9 @@
     "harness": "node examples/harness/serve.mjs",
     "smoke": "node examples/harness/smoke.mjs",
     "size": "node scripts/bundle-report.mjs",
-    "bump": "npm version -m \"chore: release v%s\"",
-    "preversion": "node scripts/version-hooks.mjs && npm run typecheck && npm test",
-    "postversion": "node scripts/version-hooks.mjs"
+    "bump": "node scripts/bump.mjs",
+    "preversion": "node scripts/bump.mjs && npm run typecheck && npm test",
+    "postversion": "node scripts/bump.mjs"
   },
   "peerDependencies": {
     "react": "^18.2.0 || ^19.0.0",
