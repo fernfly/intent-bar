@@ -9,9 +9,10 @@
  * bump, it checks that the release workflow can publish the new version.
  * After it, it says how to push the tag.
  */
-import { execFileSync, spawnSync } from 'node:child_process'
+import { spawnSync } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
 import semver from 'semver'
+import { git, lastTag, notedCommits, releaseCommits } from './git.mjs'
 
 const usage = 'Usage: npm run bump <patch|minor|major|x.y.z|auto> [--dry-run]'
 const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
@@ -55,17 +56,9 @@ function bump(args) {
  * nothing.
  */
 function autoType() {
-  const last = lastTag()
-  const since = last || 'the first commit'
-  const log = git('log', '--no-merges', '--format=%B%x00', sinceLast(last))
+  const since = lastTag() || 'the first commit'
   const count = { breaking: 0, feat: 0, fix: 0, other: 0 }
-  for (const message of log.split('\0').map((m) => m.trim()).filter(Boolean)) {
-    const [, type, bang] = /^(\w+)(?:\([^)]*\))?(!)?: /.exec(message) ?? []
-    if (bang || /^BREAKING[ -]CHANGE: /m.test(message)) count.breaking++
-    else if (type === 'feat') count.feat++
-    else if (type === 'fix' || type === 'perf') count.fix++
-    else count.other++
-  }
+  for (const { kind } of releaseCommits()) count[kind]++
   console.log(
     `\nSince ${since}: ${count.breaking} breaking, ${count.feat} feat, ${count.fix} fix or perf, ${count.other} other.`,
   )
@@ -96,8 +89,13 @@ function preview(arg, type) {
   check(version)
 
   const tag = `v${version}`
-  const log = git('log', '--no-merges', '--format=%h %s', sinceLast(lastTag()))
-  const commits = log ? log.replace(/^/gm, '  ') : '  none'
+  const commits = releaseCommits(tag)
+  const noted = notedCommits(commits)
+  const left = commits.filter((commit) => !noted.includes(commit))
+  const list = (some) =>
+    some
+      .map(({ hash, subject, kind }) => `  ${hash} ${subject}${kind === 'breaking' ? ' (breaking change)' : ''}`)
+      .join('\n') || '  none'
   console.log(`
 Dry run: nothing was written. The bump would:
 
@@ -105,10 +103,10 @@ Dry run: nothing was written. The bump would:
   Commit   chore: release ${tag}, on main
   Tag      ${tag}
 
-Commits in this release:
+Commits in the release notes:
 
-${commits}
-
+${list(noted)}
+${left.length ? `\nLeft out of the notes:\n\n${list(left)}\n` : ''}
 The real bump also runs typecheck and tests. To run it:
 
   npm run bump ${arg}
@@ -159,29 +157,6 @@ To undo it before pushing:
 
   git tag -d ${tag} && git reset --keep HEAD~1
 `)
-}
-
-/** The latest release tag reachable from HEAD, or an empty string before the first release. */
-function lastTag() {
-  return git('describe', '--tags', '--abbrev=0', '--match', 'v[0-9]*')
-}
-
-/** The `git log` range from a release tag to HEAD, or all of HEAD's history without one. */
-function sinceLast(tag) {
-  return tag ? `${tag}..HEAD` : 'HEAD'
-}
-
-/** Runs git and returns its output, or an empty string if it fails. */
-function git(...args) {
-  try {
-    return execFileSync('git', args, {
-      encoding: 'utf8',
-      maxBuffer: 64 * 1024 * 1024,
-      stdio: ['ignore', 'pipe', 'ignore'],
-    }).trim()
-  } catch {
-    return ''
-  }
 }
 
 /** Prints why the bump can't go ahead and stops it. */

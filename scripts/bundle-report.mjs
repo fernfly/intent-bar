@@ -1,8 +1,8 @@
 /**
  * Reports on the script-tag build as Markdown: its size raw, gzipped and
  * with Brotli, and the pinned script tag with its integrity hash. CI adds it
- * to the run summary, and the release workflow uses it as the release notes.
- * Run `npm run build` first.
+ * to the run summary, and the release workflow starts the release notes with
+ * it, followed by `scripts/release-commits.mjs`. Run `npm run build` first.
  */
 import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
