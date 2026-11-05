@@ -348,6 +348,7 @@ npm run harness   # serves the test pages and examples/vanilla at http://127.0.0
 npm run smoke     # browser checks; needs `npx playwright-core install --only-shell chromium` once
 npm run size      # the script tag's size and integrity hash
 npm run bump auto   # or patch, minor, major, an exact version: commits and tags it on main; pushing the tag publishes
+npm run bump auto --dry-run  # previews the bump and writes nothing
 ```
 
 ## License
