@@ -38,6 +38,8 @@ function installHelpers() {
     return +(0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)).toFixed(3)
   }
   window.t = {
+    q: (selector) => host()?.shadowRoot?.querySelector(selector) ?? null,
+    text: (selector) => host()?.shadowRoot?.querySelector(selector)?.textContent ?? null,
     isOpen: () => !!host()?.shadowRoot?.querySelector('.overlay'),
     input: () => host().shadowRoot.querySelector('.panel > [cmdk-root] > [cmdk-input]'),
     active() {
@@ -85,7 +87,10 @@ async function openPage(browser, mode, query = '') {
     errors,
     t,
     events: () => t(() => window.hostEvents),
-    reset: () => t(() => Object.assign(window.hostEvents, { shortcuts: [], navigations: [], paletteOpens: 0, reactKeydowns: 0, inferCalls: 0 })),
+    reset: () =>
+      t(() =>
+        Object.assign(window.hostEvents, { shortcuts: [], navigations: [], paletteOpens: 0, reactKeydowns: 0, inferCalls: 0, corrections: [], runs: [], undos: 0 }),
+      ),
     isOpen: () => t(() => window.t.isOpen()),
     active: () => t(() => window.t.active()),
     pageActive: () => t(() => window.t.pageActive()),
@@ -94,6 +99,11 @@ async function openPage(browser, mode, query = '') {
       await page.waitForFunction(() => window.t.isOpen())
     },
     value: () => t(() => window.t.input().value),
+    ask: async (sentence) => {
+      await page.keyboard.type(sentence)
+      await page.keyboard.press('Enter')
+    },
+    runnable: () => page.waitForFunction(() => window.t.q('button.primary')?.disabled === false),
   }
 }
 
@@ -140,7 +150,7 @@ async function withPagePalette(browser, mode) {
   await page.keyboard.type('pro')
   await page.locator('.footer').click()
   const afterFooter = await h.active()
-  await page.locator('[cmdk-group-heading]').click()
+  await page.locator('[cmdk-group-heading]', { hasText: 'Pages' }).click()
   const afterHeading = await h.active()
   await page.keyboard.type('j')
   check(
@@ -152,7 +162,7 @@ async function withPagePalette(browser, mode) {
 
   await page.keyboard.press('ControlOrMeta+a')
   await page.keyboard.press('Backspace')
-  await page.waitForFunction(() => document.querySelector('fernfly-intent-bar').shadowRoot.querySelectorAll('[cmdk-item]').length === 20)
+  await page.waitForFunction(() => document.querySelector('fernfly-intent-bar').shadowRoot.querySelectorAll('[cmdk-item]').length === 23)
   await page.mouse.move(5, 5)
   const selected = () =>
     h.t(() => {
@@ -176,8 +186,9 @@ async function withPagePalette(browser, mode) {
   await page.locator('.chips').waitFor()
   check(mode, 'Ask is pinned first and Enter sends the sentence', askFirst === 'Askbacklog items for priya' && (await h.events()).inferCalls === 1, askFirst)
 
+  await h.runnable()
   const order = []
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < 7; i++) {
     await page.keyboard.press('Tab')
     order.push(await h.active())
   }
@@ -186,8 +197,8 @@ async function withPagePalette(browser, mode) {
   const hostKeptFocus = await h.t(() => document.activeElement?.tagName === 'FERNFLY-INTENT-BAR')
   check(
     mode,
-    'Tab moves through the chips and wraps, never leaving the bar',
-    order.join(' ') === 'chip:tool chip:state chip:priority chip:assignee input chip:assignee' && hostKeptFocus,
+    'Tab moves through the chips and buttons and wraps, never leaving the bar',
+    order.join(' ') === 'chip:tool chip:state chip:priority chip:assignee chip:add BUTTON input BUTTON' && hostKeptFocus,
     order.join(' '),
   )
 
@@ -267,6 +278,153 @@ async function withPagePalette(browser, mode) {
   await page.close()
 }
 
+/** The states past parsing: lookups, corrections, confirm, notices and out of scope. */
+async function withStates(browser, mode) {
+  const h = await openPage(browser, mode, '&palette=off')
+  const { page } = h
+
+  await h.openBar()
+  await h.ask('backlog items for sam')
+  await page.waitForFunction(() => window.t.q('[data-arg="assignee"]')?.dataset.status === 'choose')
+  const blocked = await h.t(() => ({ line: window.t.text('.result-line'), disabled: window.t.q('button.primary').disabled }))
+  if (mode === 'react') await page.screenshot({ path: join(out, 'propel-light-choose.png') })
+  await page.locator('[data-arg="assignee"]').click()
+  await page.locator('.picker [cmdk-item]').first().waitFor()
+  const options = await page.locator('.picker [cmdk-item]').allTextContents()
+  await page.keyboard.press('ArrowDown')
+  await page.keyboard.press('Enter')
+  await h.runnable()
+  await page.locator('button.primary').click()
+  let ev = await h.events()
+  check(
+    mode,
+    'two matches ask for a choice and block the run, and the pick runs without a correction',
+    blocked.disabled &&
+      blocked.line === 'Choose which assignee you mean.' &&
+      options[0] === 'Sam Leesam.lee@example.com' &&
+      ev.runs[0]?.args.assignee === 'u-sam-ortiz' &&
+      ev.corrections.length === 0 &&
+      !(await h.isOpen()),
+    `${blocked.line} | ${options.join(', ')} | ran ${JSON.stringify(ev.runs[0]?.args)}`,
+  )
+
+  await h.reset()
+  await h.openBar()
+  await h.ask('backlog items for priya')
+  await h.runnable()
+  await page.locator('[data-arg="state"]').click()
+  await page.keyboard.type('todo')
+  await page.keyboard.press('Enter')
+  await h.runnable()
+  await page.locator('button.primary').click()
+  await page.locator('.toast-note').waitFor()
+  ev = await h.events()
+  check(
+    mode,
+    'an edited call sends one correction once it runs',
+    ev.corrections.length === 1 &&
+      ev.corrections[0].log_ref === 'fake-list' &&
+      ev.corrections[0].call.arguments.state === 'todo' &&
+      ev.runs.length === 1 &&
+      (await page.locator('.toast-note').textContent()) === 'Saved as a correction for review',
+    JSON.stringify(ev.corrections[0]?.call),
+  )
+
+  await h.reset()
+  await h.openBar()
+  await h.ask('move backlog items to sam lee')
+  await h.runnable()
+  const runLabel = await page.locator('button.primary').textContent()
+  await page.keyboard.press('Enter')
+  await page.locator('.confirm').waitFor()
+  const confirm = await h.t(() => ({
+    title: window.t.text('.confirm-title'),
+    sample: window.t.q('.sample').children.length,
+    undo: window.t.text('.confirm').includes('You can undo this afterwards.'),
+    focused: window.t.q('.confirm button.primary') === document.querySelector('fernfly-intent-bar').shadowRoot.activeElement,
+  }))
+  if (mode === 'react') await page.screenshot({ path: join(out, 'propel-light-confirm.png') })
+  await page.keyboard.press('Enter')
+  await page.waitForFunction(() => /\d of \d/.test(window.t.text('.toast') ?? ''))
+  const progress = await h.t(() => window.t.text('.toast'))
+  await page.locator('.toast button').waitFor()
+  const done = await h.t(() => window.t.text('.toast'))
+  await page.locator('.toast button').click()
+  await page.waitForFunction(() => window.hostEvents.undos === 1)
+  ev = await h.events()
+  check(
+    mode,
+    'an action confirms, shows progress while it runs, then offers Undo',
+    runLabel === 'Assign 6… ↵' &&
+      confirm.title === 'Assign 6 work items to Sam Lee' &&
+      confirm.sample === 3 &&
+      confirm.undo &&
+      confirm.focused &&
+      ev.runs[0]?.args.set_assignee === 'u-sam-lee' &&
+      ev.corrections.length === 0,
+    `${runLabel} | ${confirm.title} | ${progress} | ${done}`,
+  )
+
+  await h.openBar()
+  await h.ask('slow down please now')
+  await page.locator('.notice').waitFor()
+  const notice = await h.t(() => window.t.text('.notice'))
+  await page.keyboard.press('ControlOrMeta+a')
+  await page.keyboard.type('proj')
+  const found = await page.locator('[cmdk-item]').allTextContents()
+  check(mode, 'a rate limit leaves search working, with a one-line notice', notice === 'Too many requests right now. Search still works.' && found.join() === 'Projects', `${notice} | ${found.join(', ')}`)
+
+  await page.keyboard.press('ControlOrMeta+a')
+  await h.ask('what is the weather today')
+  await page.locator('.note', { hasText: 'not something' }).waitFor()
+  const scope = await h.t(() => ({ note: window.t.text('.note'), footer: window.t.text('.footer') }))
+  check(mode, 'out of scope says so, in the app’s name', scope.note === 'That is not something Plane can do.' && scope.footer.startsWith('Saved for review'), scope.note)
+  await page.keyboard.press('Escape')
+
+  await h.t(() => (document.getElementById('attached-search').value = 'proj'))
+  await page.locator('#attached-search').click()
+  await page.waitForFunction(() => window.t.isOpen())
+  const carried = await h.value()
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(300)
+  check(
+    mode,
+    'an attached field opens the bar with its text, and gets focus back without reopening',
+    carried === 'proj' && !(await h.isOpen()) && (await h.pageActive()) === 'attached-search',
+    `"${carried}", focus on ${await h.pageActive()}`,
+  )
+
+  check(mode, 'no page errors (states)', h.errors.length === 0, h.errors.join(' | ').slice(0, 300))
+  await page.close()
+}
+
+/** Hotkey takeover with the page palette on, and the launcher. */
+async function withTriggers(browser, mode) {
+  const h = await openPage(browser, mode, '&takeover=1')
+  await h.page.keyboard.press('ControlOrMeta+k')
+  const opened = await h.isOpen()
+  await h.page.keyboard.press('ControlOrMeta+k')
+  check(
+    mode,
+    'takeover: ⌘K opens the bar before the page palette sees it, and closes it',
+    opened && !(await h.isOpen()) && (await h.events()).paletteOpens === 0,
+  )
+  await h.page.close()
+
+  const l = await openPage(browser, mode, '&launcher=1&palette=off')
+  await l.page.locator('.launcher').waitFor()
+  const launcher = await l.t(() => ({ text: window.t.text('.launcher'), accent: document.querySelector('fernfly-intent-bar').style.getPropertyValue('--fb-accent') }))
+  await l.page.locator('.launcher').click()
+  check(
+    mode,
+    'launcher: themed from the page, and opens the bar',
+    (await l.isOpen()) && launcher.accent === 'var(--brand-default)' && /^Ask.+K$/.test(launcher.text),
+    JSON.stringify(launcher),
+  )
+  check(mode, 'no page errors (triggers)', h.errors.length === 0 && l.errors.length === 0, [...h.errors, ...l.errors].join(' | ').slice(0, 300))
+  await l.page.close()
+}
+
 /** The checks with the page palette off, so the bar takes ⌘K, as it would if it replaced Power K. */
 async function withoutPagePalette(browser, mode) {
   const h = await openPage(browser, mode, '&palette=off')
@@ -292,6 +450,8 @@ try {
   for (const mode of MODES) {
     await withPagePalette(browser, mode)
     await withoutPagePalette(browser, mode)
+    await withStates(browser, mode)
+    await withTriggers(browser, mode)
   }
 } finally {
   await browser.close()

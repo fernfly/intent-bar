@@ -6,11 +6,11 @@
  */
 import { StrictMode, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import { IntentBar, type BarPage, type ToolConfig, type Transport } from '../../src/index'
+import { IntentBar, type IntentBarProps } from '../../src/index'
 
 declare global {
   interface Window {
-    harness: { transport: Transport; hotkey: string; pages: BarPage[]; tools: Record<string, ToolConfig>; navigate: (href: string) => void }
+    harness: Omit<IntentBarProps, 'open' | 'onOpenChange'>
     hostEvents: { reactKeydowns: number }
     harnessReady?: boolean
   }
@@ -18,7 +18,6 @@ declare global {
 
 function HostApp() {
   const [open, setOpen] = useState(false)
-  const { transport, hotkey, pages, tools, navigate } = window.harness
 
   useEffect(() => {
     const onOpen = () => setOpen(true)
@@ -29,15 +28,7 @@ function HostApp() {
 
   return (
     <div onKeyDown={() => window.hostEvents.reactKeydowns++}>
-      <IntentBar
-        transport={transport}
-        hotkey={hotkey}
-        pages={pages}
-        tools={tools}
-        navigate={navigate}
-        open={open}
-        onOpenChange={setOpen}
-      />
+      <IntentBar {...window.harness} open={open} onOpenChange={setOpen} />
     </div>
   )
 }

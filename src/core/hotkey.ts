@@ -80,6 +80,17 @@ export function isComposing(e: KeyboardEvent): boolean {
   return e.isComposing || e.keyCode === 229
 }
 
+/** How a hotkey reads in a hint: `⌘K` on Apple platforms, `Ctrl+K` elsewhere. */
+export function formatHotkey(hk: Hotkey, apple = isApplePlatform()): string {
+  const parts: string[] = []
+  if (hk.ctrl || (hk.mod && !apple)) parts.push(apple ? '⌃' : 'Ctrl')
+  if (hk.alt) parts.push(apple ? '⌥' : 'Alt')
+  if (hk.shift) parts.push(apple ? '⇧' : 'Shift')
+  if (hk.meta || (hk.mod && apple)) parts.push(apple ? '⌘' : 'Meta')
+  parts.push(hk.key.length === 1 ? hk.key.toUpperCase() : hk.key)
+  return parts.join(apple ? '' : '+')
+}
+
 /** Whether a hotkey has a modifier that stops it typing text. Shift alone doesn't. */
 export function hasModifier(hk: Hotkey): boolean {
   return hk.mod || hk.ctrl || hk.meta || hk.alt

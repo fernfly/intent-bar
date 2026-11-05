@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { isEditable, matchesHotkey, parseHotkey, shouldOpenFromHotkey } from './hotkey'
+import { formatHotkey, isEditable, matchesHotkey, parseHotkey, shouldOpenFromHotkey } from './hotkey'
 
 const key = (init: KeyboardEventInit) => new KeyboardEvent('keydown', { bubbles: true, composed: true, cancelable: true, ...init })
 
@@ -101,5 +101,14 @@ describe('shouldOpenFromHotkey', () => {
     const input = document.createElement('input')
     document.body.append(input)
     expect(decide(input, { key: 'k', metaKey: true })).toBe(true)
+  })
+})
+
+describe('formatHotkey', () => {
+  it('reads like the platform writes it', () => {
+    expect(formatHotkey(parseHotkey('mod+k'), true)).toBe('⌘K')
+    expect(formatHotkey(parseHotkey('mod+k'), false)).toBe('Ctrl+K')
+    expect(formatHotkey(parseHotkey('ctrl+shift+p'), false)).toBe('Ctrl+Shift+P')
+    expect(formatHotkey(parseHotkey('/'), true)).toBe('/')
   })
 })
