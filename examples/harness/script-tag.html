@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en" data-vars="propel">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Intent bar: script tag only</title>
+    <link rel="stylesheet" href="./harness.css" />
+    <script src="/dist/intent-bar.global.js" data-endpoint="/fake-api" data-app-name="Plane" data-attach="#search"></script>
+    <script src="./script-tag.js" defer></script>
+  </head>
+  <body>
+    <header class="toolbar">
+      <strong>Script tag only</strong>
+      <input id="search" placeholder="Search (opens the bar)" />
+    </header>
+    <main>
+      <p>
+        The bar mounts from its script tag's data attributes alone and calls a fake infer endpoint on this server. This
+        page calls no <code>init()</code>: it only answers the bar's <code>fernfly:preview</code> and
+        <code>fernfly:run</code> events. Try <kbd>⌘K</kbd> and "move backlog for priya", "archive old cycles" or "slow
+        down please now".
+      </p>
+      <h2>What the page saw</h2>
+      <ol id="log"></ol>
+    </main>
+  </body>
+</html>

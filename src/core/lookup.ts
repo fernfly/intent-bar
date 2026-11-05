@@ -46,8 +46,9 @@ export function resolveLocally(
   return null
 }
 
-/** One match resolves, several ask the user to choose, none blocks the run. */
-export function fromMatches(matches: readonly LookupOption[]): Resolution {
+/** One match resolves, several ask the user to choose, none blocks the run. A declined lookup (`null`) passes the words through. */
+export function fromMatches(matches: readonly LookupOption[] | null | undefined, value: unknown, label: (value: unknown) => string): Resolution {
+  if (matches == null) return { status: 'resolved', value, label: label(value) }
   const [only] = matches
   if (matches.length === 1 && only) return { status: 'resolved', value: only.id, label: only.label }
   return matches.length === 0 ? { status: 'missing' } : { status: 'choose', options: matches }

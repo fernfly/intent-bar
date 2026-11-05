@@ -134,12 +134,17 @@ export interface ToolConfig {
   args?: Readonly<Record<string, ArgConfig>>
   /** `false` skips confirm for an action, but only when the preview count is 1 or less. */
   confirm?: boolean
-  preview?(args: ResolvedArgs, ctx: HandlerContext): Preview | Promise<Preview>
+  /** What the call would touch. Returning nothing means no preview. */
+  preview?(args: ResolvedArgs, ctx: HandlerContext): Preview | undefined | Promise<Preview | undefined>
   run?(args: ResolvedArgs, ctx: RunContext): RunResult | void | Promise<RunResult | void>
 }
 
-/** Finds workspace values for the user's words. One match resolves, several ask the user to choose, none blocks the run. */
+/**
+ * Finds workspace values for the user's words. One match resolves, several
+ * ask the user to choose, none blocks the run. `null` declines the lookup,
+ * and the words pass through for the host to handle.
+ */
 export type ValueResolver = (
   query: string,
   ctx: { context: HostContext },
-) => readonly LookupOption[] | Promise<readonly LookupOption[]>
+) => readonly LookupOption[] | null | undefined | Promise<readonly LookupOption[] | null | undefined>

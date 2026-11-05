@@ -34,9 +34,13 @@ describe('fromMatches', () => {
   it('resolves one match, asks for a choice among several, and blocks on none', () => {
     const sam = { id: 's1', label: 'Sam Lee' }
     const sam2 = { id: 's2', label: 'Sam Ortiz' }
-    expect(fromMatches([sam])).toEqual({ status: 'resolved', value: 's1', label: 'Sam Lee' })
-    expect(fromMatches([sam, sam2])).toEqual({ status: 'choose', options: [sam, sam2] })
-    expect(fromMatches([])).toEqual({ status: 'missing' })
+    expect(fromMatches([sam], 'sam', label)).toEqual({ status: 'resolved', value: 's1', label: 'Sam Lee' })
+    expect(fromMatches([sam, sam2], 'sam', label)).toEqual({ status: 'choose', options: [sam, sam2] })
+    expect(fromMatches([], 'sam', label)).toEqual({ status: 'missing' })
+  })
+
+  it('passes the words through when the lookup declines', () => {
+    expect(fromMatches(null, 'sam', label)).toEqual({ status: 'resolved', value: 'sam', label: 'sam' })
   })
 })
 
