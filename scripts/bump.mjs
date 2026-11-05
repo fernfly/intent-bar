@@ -9,9 +9,10 @@
  * bump, it checks that the release workflow can publish the new version.
  * After it, it says how to push the tag.
  */
-import { execFileSync, spawnSync } from 'node:child_process'
+import { spawnSync } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
 import semver from 'semver'
+import { git, lastTag, releaseCommits, sinceLast } from './git.mjs'
 
 const usage = 'Usage: npm run bump <patch|minor|major|x.y.z|auto> [--dry-run]'
 const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
@@ -96,8 +97,8 @@ function preview(arg, type) {
   check(version)
 
   const tag = `v${version}`
-  const log = git('log', '--no-merges', '--format=%h %s', sinceLast(lastTag()))
-  const commits = log ? log.replace(/^/gm, '  ') : '  none'
+  const lines = releaseCommits(tag)
+  const commits = lines.length ? lines.map((line) => `  ${line}`).join('\n') : '  none'
   console.log(`
 Dry run: nothing was written. The bump would:
 
@@ -159,29 +160,6 @@ To undo it before pushing:
 
   git tag -d ${tag} && git reset --keep HEAD~1
 `)
-}
-
-/** The latest release tag reachable from HEAD, or an empty string before the first release. */
-function lastTag() {
-  return git('describe', '--tags', '--abbrev=0', '--match', 'v[0-9]*')
-}
-
-/** The `git log` range from a release tag to HEAD, or all of HEAD's history without one. */
-function sinceLast(tag) {
-  return tag ? `${tag}..HEAD` : 'HEAD'
-}
-
-/** Runs git and returns its output, or an empty string if it fails. */
-function git(...args) {
-  try {
-    return execFileSync('git', args, {
-      encoding: 'utf8',
-      maxBuffer: 64 * 1024 * 1024,
-      stdio: ['ignore', 'pipe', 'ignore'],
-    }).trim()
-  } catch {
-    return ''
-  }
 }
 
 /** Prints why the bump can't go ahead and stops it. */

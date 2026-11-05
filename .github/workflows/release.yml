@@ -1,8 +1,9 @@
 name: Release
 
 # Pushing a tag such as v0.1.0 publishes that version to npm, with
-# provenance, and writes the GitHub release notes with the script tag and
-# its integrity hash. npm refuses while package.json is still private.
+# provenance, and writes the GitHub release notes with the script tag, its
+# integrity hash and the commits since the last release. npm refuses while
+# package.json is still private.
 on:
   push:
     tags: ['v*']
@@ -16,6 +17,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          # All history and tags, to list the commits since the last release.
+          fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
@@ -41,6 +45,7 @@ jobs:
       - name: Create the GitHub release
         run: |
           npm run size --silent > "$RUNNER_TEMP/notes.md"
+          node scripts/release-commits.mjs >> "$RUNNER_TEMP/notes.md"
           gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md"
         env:
           GH_TOKEN: ${{ github.token }}
