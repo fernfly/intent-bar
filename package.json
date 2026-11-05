@@ -65,7 +65,10 @@
     "test:watch": "vitest",
     "harness": "node examples/harness/serve.mjs",
     "smoke": "node examples/harness/smoke.mjs",
-    "size": "node scripts/bundle-report.mjs"
+    "size": "node scripts/bundle-report.mjs",
+    "bump": "node scripts/bump.mjs",
+    "preversion": "node scripts/bump.mjs && npm run typecheck && npm test",
+    "postversion": "node scripts/bump.mjs"
   },
   "peerDependencies": {
     "react": "^18.2.0 || ^19.0.0",
@@ -84,6 +87,7 @@
     "playwright-core": "^1.64.1",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
+    "semver": "^7.8.6",
     "tsup": "^9.0.0",
     "typescript": "^6.0.3",
     "vitest": "^4.1.12"
