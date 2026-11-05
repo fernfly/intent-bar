@@ -1,56 +1,60 @@
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type KeyboardEvent as ReactKeyboardEvent,
-  type MouseEvent as ReactMouseEvent,
-  type RefObject,
-  type SyntheticEvent,
-} from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandRoot, defaultFilter } from 'cmdk'
-import { hasModifier, isComposing, matchesHotkey, parseHotkey, shouldOpenFromHotkey, type Hotkey } from '../core/hotkey'
-import { cycleFocus, deepActiveElement, isFocusable, lockScroll, returnFocus } from '../core/overlay'
+import { watchAttached } from '../core/attach'
+import { formatHotkey, parseHotkey, shouldOpenFromHotkey } from '../core/hotkey'
+import { ASK_MIN_WORDS, wordsOf } from '../core/router'
 import { createShadowMount, type ShadowMount } from '../core/shadow'
 import { applyTheme, browserThemeEnv, readTheme } from '../core/theme'
-import type { BarPage, Call, ToolConfig, Transport } from '../core/types'
+import { createTransport } from '../core/transport'
+import type { BarPage, HostContext, ToolConfig, Transport, ValueResolver } from '../core/types'
+import { registerBar, type OpenOptions, type OpenRequest } from './controller'
+import { Overlay } from './Overlay'
+import { Toast, useRunner } from './Toast'
+
+/** A hotkey with options. */
+export interface HotkeyConfig {
+  /** Such as `mod+k` or `/`. `mod` is ⌘ on Apple platforms and Ctrl elsewhere. */
+  keys: string
+  /**
+   * Takes the key before the host's own listeners see it, so a host palette
+   * bound to the same key stays shut. Off by default, when the bar gives way
+   * to a host that already handled the key.
+   */
+  takeOver?: boolean
+}
 
 export interface IntentBarProps {
-  /** Sends a sentence to the model. */
-  transport: Transport
-  /** Pages for instant search. */
-  pages?: BarPage[]
-  /** How each tool and its arguments are labelled and edited. */
-  tools?: Record<string, ToolConfig>
+  /** The project's public id. The bar calls `https://fernfly.com/api/p/<project>`. */
+  project?: string
+  /** A base URL that takes `/infer` and `/corrections`, such as your own proxy for a project with an API key. */
+  endpoint?: string
+  /** Replaces the network entirely, for tests and demos. */
+  transport?: Transport
+  /** How each tool is labelled, previewed and run. */
+  tools?: Readonly<Record<string, ToolConfig>>
+  /** Lookups for workspace data, per entity name. */
+  values?: Readonly<Record<string, ValueResolver>>
+  /** The host's context, read when the bar opens and again for each preview and run. */
+  context?: () => HostContext
+  /** Pages for instant search. Defaults to the links in the page's `<nav>`. */
+  pages?: readonly BarPage[]
+  /** Goes to a page picked from instant search. Defaults to `location.assign`. */
+  navigate?: (href: string) => void
+  /** Your app's name, as in "That is not something {appName} can do". */
+  appName?: string
   /** The hotkey that opens the bar, or `false` for none. Defaults to `mod+k`. */
-  hotkey?: string | false
+  hotkey?: string | false | HotkeyConfig
+  /** Your own search field, as a selector or element. Focusing it, or Enter in it, opens the bar with its text. */
+  attach?: string | Element | null
+  /** Shows a floating button that opens the bar. Off by default. */
+  launcher?: boolean
   open?: boolean
   defaultOpen?: boolean
   onOpenChange?: (open: boolean) => void
-  /** Goes to a page picked from instant search. Defaults to setting `location.href`. */
-  navigate?: (href: string) => void
   placeholder?: string
 }
 
-type Phase =
-  | { kind: 'search' }
-  | { kind: 'loading' }
-  | { kind: 'parsed'; call: Call; latency: number }
-  | { kind: 'out_of_scope'; reply?: string }
-  | { kind: 'error' }
-
-const ASK = '__fernfly_ask__'
-const ASK_MIN_WORDS = 3
-
-/** cmdk's filter, with the Ask item always scoring highest so it stays pinned first. */
-const filter = (value: string, search: string, keywords?: string[]) =>
-  value === ASK ? 1 : defaultFilter(value, search, keywords)
-
-/** Stops a React event here, so it bubbles neither to the host app's React tree nor past the shadow host. */
-const stop = (e: SyntheticEvent) => e.stopPropagation()
+const NO_TOOLS: Readonly<Record<string, ToolConfig>> = {}
 
 /**
  * Creates the shadow mount after the first render and removes it on unmount,
@@ -68,289 +72,117 @@ function useShadowMount(): ShadowMount | null {
 
 /**
  * The intent bar. It renders through a portal into its own shadow root at the
- * end of `document.body`, and opens on its hotkey unless the page already
- * handled the key.
+ * end of `document.body`. It opens on its hotkey, from `useIntentBar()`, from
+ * an attached field, or from its launcher.
  */
 export function IntentBar(props: IntentBarProps) {
   const mount = useShadowMount()
   const [innerOpen, setInnerOpen] = useState(props.defaultOpen ?? false)
   const open = props.open ?? innerOpen
+  const [request, setRequest] = useState<OpenRequest | null>(null)
+  const requestSeq = useRef(0)
+  const returningFocusTo = useRef<Element | null>(null)
   const latest = useRef(props)
   latest.current = props
+  const isOpen = useRef(open)
+  isOpen.current = open
 
   const setOpen = useCallback((next: boolean) => {
     if (latest.current.open === undefined) setInnerOpen(next)
     latest.current.onOpenChange?.(next)
   }, [])
+  const close = useCallback(() => setOpen(false), [setOpen])
+  const openBar = useCallback(
+    (options?: OpenOptions) => {
+      setRequest(options?.query !== undefined || options?.ask ? { ...options, id: ++requestSeq.current } : null)
+      setOpen(true)
+    },
+    [setOpen],
+  )
 
-  const hotkey = useMemo(() => (props.hotkey === false ? null : parseHotkey(props.hotkey ?? 'mod+k')), [props.hotkey])
+  useEffect(() => {
+    if (!open) setRequest(null)
+  }, [open])
+
+  useEffect(() => registerBar({ open: openBar, close }), [openBar, close])
+
+  const transport = useMemo(
+    () => props.transport ?? createTransport({ project: props.project, endpoint: props.endpoint }),
+    [props.transport, props.project, props.endpoint],
+  )
+  const runner = useRunner(transport)
+  const getContext = useCallback((): HostContext => latest.current.context?.() ?? {}, [])
+  const navigate = useCallback((href: string) => {
+    const nav = latest.current.navigate
+    if (nav) nav(href)
+    else window.location.assign(href)
+  }, [])
+
+  const keys = props.hotkey === false ? null : typeof props.hotkey === 'object' ? props.hotkey.keys : (props.hotkey ?? 'mod+k')
+  const takeOver = typeof props.hotkey === 'object' && props.hotkey.takeOver === true
+  const hotkey = useMemo(() => (keys === null ? null : parseHotkey(keys)), [keys])
 
   useEffect(() => {
     if (!hotkey) return
     const onKeyDown = (e: KeyboardEvent) => {
       if (!shouldOpenFromHotkey(e, hotkey)) return
       e.preventDefault()
-      setOpen(true)
+      if (!takeOver) return openBar()
+      e.stopPropagation()
+      if (isOpen.current) close()
+      else openBar()
     }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [hotkey, setOpen])
+    window.addEventListener('keydown', onKeyDown, takeOver)
+    return () => window.removeEventListener('keydown', onKeyDown, takeOver)
+  }, [hotkey, takeOver, openBar, close])
+
+  useEffect(() => {
+    if (mount && props.launcher) applyTheme(mount.host, readTheme(browserThemeEnv(mount.host)))
+  }, [mount, props.launcher])
+
+  useEffect(() => {
+    const target = props.attach
+    if (!target) return
+    return watchAttached(target, document, (field, trigger) => {
+      if (isOpen.current || (trigger === 'focus' && field === returningFocusTo.current)) return
+      const query = field.value
+      openBar({ query, ask: trigger === 'enter' && wordsOf(query).length >= ASK_MIN_WORDS })
+    })
+  }, [props.attach, openBar])
 
   if (!mount) return null
   return createPortal(
-    open ? <Overlay {...props} mount={mount} hotkey={hotkey} onClose={() => setOpen(false)} /> : null,
+    <>
+      {open && (
+        <Overlay
+          mount={mount}
+          hotkey={takeOver ? null : hotkey}
+          transport={transport}
+          pages={props.pages}
+          tools={props.tools ?? NO_TOOLS}
+          values={props.values}
+          getContext={getContext}
+          navigate={navigate}
+          appName={props.appName ?? 'this app'}
+          placeholder={props.placeholder}
+          request={request}
+          onClose={close}
+          onRun={runner.start}
+          onReturnFocus={(to) => {
+            returningFocusTo.current = to
+            setTimeout(() => {
+              if (returningFocusTo.current === to) returningFocusTo.current = null
+            })
+          }}
+        />
+      )}
+      {props.launcher && !open && (
+        <button type="button" className="launcher" onClick={() => openBar()}>
+          Ask{hotkey && <kbd>{formatHotkey(hotkey)}</kbd>}
+        </button>
+      )}
+      {runner.toast && <Toast toast={runner.toast} onUndo={runner.undo} onDismiss={runner.dismiss} />}
+    </>,
     mount.container,
-  )
-}
-
-interface OverlayProps extends Omit<IntentBarProps, 'hotkey'> {
-  mount: ShadowMount
-  hotkey: Hotkey | null
-  onClose: () => void
-}
-
-/**
- * The open bar: owns the theme step, scroll lock, focus trap, Escape and
- * focus return. Mounted only while open, so each open starts fresh.
- */
-function Overlay({ mount, hotkey, onClose, transport, pages = [], tools, navigate, placeholder }: OverlayProps) {
-  const panelRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
-  const pickerRef = useRef<HTMLDivElement>(null)
-  const chipRefs = useRef(new Map<string, HTMLButtonElement>())
-  const returnTo = useRef<HTMLElement | null>(null)
-  const requestId = useRef(0)
-  const [search, setSearch] = useState('')
-  const [phase, setPhase] = useState<Phase>({ kind: 'search' })
-  const [picking, setPicking] = useState<string | null>(null)
-
-  useLayoutEffect(() => {
-    const doc = mount.host.ownerDocument
-    if (doc.activeElement !== mount.host) returnTo.current = deepActiveElement(doc) as HTMLElement | null // StrictMode re-runs this with focus already in the bar
-    applyTheme(mount.host, readTheme(browserThemeEnv(mount.host)))
-    const unlock = lockScroll(doc)
-    inputRef.current?.focus()
-    return () => {
-      unlock()
-      returnFocus(returnTo.current, mount.root)
-    }
-  }, [mount])
-
-  const words = search.trim().split(/\s+/).filter(Boolean)
-  const anyPageMatches = pages.some((p) => defaultFilter(p.label, search) > 0)
-  const showAsk = words.length >= ASK_MIN_WORDS || (words.length > 0 && !anyPageMatches)
-
-  const onSearch = (value: string) => {
-    setSearch(value)
-    if (phase.kind !== 'search') {
-      requestId.current++
-      setPhase({ kind: 'search' })
-      setPicking(null)
-    }
-  }
-
-  const ask = async () => {
-    const utterance = search.trim()
-    if (!utterance) return
-    const id = ++requestId.current
-    setPhase({ kind: 'loading' })
-    const started = performance.now()
-    try {
-      const res = await transport({ utterance })
-      if (id !== requestId.current) return
-      const call = res.calls[0]
-      if (res.out_of_scope || !call) setPhase({ kind: 'out_of_scope', reply: res.reply })
-      else setPhase({ kind: 'parsed', call, latency: Math.round(performance.now() - started) })
-    } catch {
-      if (id === requestId.current) setPhase({ kind: 'error' })
-    }
-  }
-
-  const go = (page: BarPage) => {
-    onClose()
-    if (navigate) navigate(page.href)
-    else window.location.href = page.href
-  }
-
-  const closePicker = (arg: string) => {
-    chipRefs.current.get(arg)?.focus()
-    setPicking(null)
-  }
-
-  const pick = (arg: string, value: string) => {
-    if (phase.kind === 'parsed') {
-      setPhase({ ...phase, call: { ...phase.call, arguments: { ...phase.call.arguments, [arg]: value } } })
-    }
-    closePicker(arg)
-  }
-
-  const onKeyDownCapture = (e: ReactKeyboardEvent) => {
-    if (!hotkey || !hasModifier(hotkey) || isComposing(e.nativeEvent)) return
-    if (!matchesHotkey(e.nativeEvent, hotkey)) return
-    e.preventDefault()
-    e.stopPropagation()
-    onClose()
-  }
-
-  const onKeyDown = (e: ReactKeyboardEvent) => {
-    if (isComposing(e.nativeEvent)) return
-    if (e.key === 'Escape') {
-      e.preventDefault()
-      onClose()
-    } else if (e.key === 'Tab') {
-      e.preventDefault()
-      const scope = pickerRef.current ?? panelRef.current
-      if (scope) cycleFocus(scope, mount.root, e.shiftKey)
-    }
-  }
-
-  const onMouseDown = (e: ReactMouseEvent) => {
-    if (!isFocusable(e.target)) e.preventDefault()
-  }
-
-  const onBackdropClick = (e: ReactMouseEvent) => {
-    if (e.target === e.currentTarget) onClose()
-  }
-
-  const tool = phase.kind === 'parsed' ? tools?.[phase.call.name] : undefined
-  const pickingArg = picking ? tool?.args?.[picking] : undefined
-
-  return (
-    <div className="overlay" onKeyDown={stop} onKeyUp={stop} onMouseDown={onMouseDown} onClick={onBackdropClick}>
-      <div
-        ref={panelRef}
-        className="panel"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Intent bar"
-        onKeyDownCapture={onKeyDownCapture}
-        onKeyDown={onKeyDown}
-      >
-        <CommandRoot label="Intent bar" loop filter={filter} shouldFilter={phase.kind === 'search'}>
-          <CommandInput
-            ref={inputRef}
-            value={search}
-            onValueChange={onSearch}
-            placeholder={placeholder ?? 'Search, or describe what you want'}
-          />
-          {phase.kind === 'search' && (
-            <CommandList>
-              {showAsk && (
-                <CommandItem value={ASK} onSelect={ask}>
-                  <span className="ask-key">Ask</span>
-                  <span>{search.trim()}</span>
-                </CommandItem>
-              )}
-              {pages.length > 0 && (
-                <CommandGroup heading="Pages">
-                  {pages.map((page) => (
-                    <CommandItem key={page.href} value={page.label} onSelect={() => go(page)}>
-                      {page.label}
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
-              )}
-            </CommandList>
-          )}
-        </CommandRoot>
-
-        {phase.kind === 'loading' && <p className="note">Asking the model</p>}
-        {phase.kind === 'out_of_scope' && <p className="note">{phase.reply ?? 'That is not something this app can do.'}</p>}
-        {phase.kind === 'error' && <p className="note">The model is unavailable right now. Search still works.</p>}
-        {phase.kind === 'parsed' && (
-          <div className="chips" role="group" aria-label="Parsed request">
-            <button type="button" className="chip" data-role="tool">
-              {tool?.label ?? phase.call.name}
-            </button>
-            {Object.entries(phase.call.arguments).map(([name, value]) => {
-              const arg = tool?.args?.[name]
-              return (
-                <button
-                  key={name}
-                  ref={(el) => {
-                    if (el) chipRefs.current.set(name, el)
-                    else chipRefs.current.delete(name)
-                  }}
-                  type="button"
-                  className="chip"
-                  data-role="match"
-                  data-arg={name}
-                  aria-haspopup={arg?.enum ? 'listbox' : undefined}
-                  aria-expanded={arg?.enum ? picking === name : undefined}
-                  onClick={() => arg?.enum && setPicking(name)}
-                >
-                  <span className="chip-key">{arg?.label ?? name}</span>
-                  <span>{String(value)}</span>
-                </button>
-              )
-            })}
-          </div>
-        )}
-        {phase.kind === 'parsed' && picking && pickingArg?.enum && (
-          <Picker
-            pickerRef={pickerRef}
-            label={pickingArg.label ?? picking}
-            options={pickingArg.enum}
-            current={String(phase.call.arguments[picking] ?? '')}
-            onPick={(value) => pick(picking, value)}
-            onCancel={() => closePicker(picking)}
-          />
-        )}
-
-        <footer className="footer">
-          <span>
-            {phase.kind === 'parsed'
-              ? `Parsed in ${phase.latency} ms`
-              : phase.kind === 'loading'
-                ? 'Model call'
-                : 'Instant search, no model call'}
-          </span>
-          <span>
-            <kbd>Tab</kbd> chips, <kbd>Esc</kbd> close
-          </span>
-        </footer>
-      </div>
-    </div>
-  )
-}
-
-interface PickerProps {
-  pickerRef: RefObject<HTMLDivElement | null>
-  label: string
-  options: readonly string[]
-  current: string
-  onPick: (value: string) => void
-  onCancel: () => void
-}
-
-/**
- * A chip's dropdown: its own `Command`, beside the main one rather than inside
- * it. Escape closes only the dropdown and returns focus to the chip.
- */
-function Picker({ pickerRef, label, options, current, onPick, onCancel }: PickerProps) {
-  const inputRef = useRef<HTMLInputElement>(null)
-  useLayoutEffect(() => inputRef.current?.focus(), [])
-
-  const onKeyDown = (e: ReactKeyboardEvent) => {
-    if (e.key !== 'Escape' || isComposing(e.nativeEvent)) return
-    e.preventDefault()
-    e.stopPropagation()
-    onCancel()
-  }
-
-  return (
-    <div ref={pickerRef} className="picker" onKeyDown={onKeyDown}>
-      <CommandRoot label={`Choose ${label}`} loop defaultValue={current}>
-        <CommandInput ref={inputRef} placeholder={label} />
-        <CommandList>
-          <CommandEmpty>No match</CommandEmpty>
-          {options.map((option) => (
-            <CommandItem key={option} value={option} onSelect={() => onPick(option)}>
-              {option}
-            </CommandItem>
-          ))}
-        </CommandList>
-      </CommandRoot>
-    </div>
   )
 }

@@ -7,7 +7,9 @@ import { IntentBar } from './IntentBar'
 
 const tools: Record<string, ToolConfig> = {
   list_issues: {
+    kind: 'filter',
     label: 'Work items',
+    run: () => {},
     args: { state: { label: 'state', enum: ['backlog', 'todo', 'done'] }, assignee: { label: 'assignee' } },
   },
 }
@@ -17,12 +19,15 @@ const pages = [
 ]
 
 /** A transport that answers every sentence with the same call, after a tick. */
-function fakeTransport(): Transport {
-  return vi.fn(async () => ({
-    calls: [{ name: 'list_issues', arguments: { state: 'backlog', assignee: 'Priya' } }],
-    latency_ms: 40,
-    log_ref: 'ref',
-  }))
+function fakeTransport() {
+  return {
+    infer: vi.fn<Transport['infer']>(async () => ({
+      calls: [{ name: 'list_issues', arguments: { state: 'backlog', assignee: 'Priya' } }],
+      latency_ms: 40,
+      log_ref: 'ref',
+    })),
+    correct: vi.fn(async () => {}),
+  }
 }
 
 const host = () => document.querySelector('fernfly-intent-bar') as HTMLElement
@@ -156,25 +161,24 @@ describe('IntentBar', () => {
     expect(options[0]?.textContent).toBe('Askbacklog for priya')
     expect(options[0]?.getAttribute('aria-selected')).toBe('true')
     await user.keyboard('{Enter}')
-    expect(transport).toHaveBeenCalledWith({ utterance: 'backlog for priya' })
+    expect(transport.infer).toHaveBeenCalledWith({ utterance: 'backlog for priya', meta: { source: 'intent-bar' } })
     await bar().findByRole('group', { name: 'Parsed request' })
   })
 
-  it('cycles Tab through the input and chips, and wraps both ways', async () => {
+  it('cycles Tab through the input, chips and buttons, and wraps both ways', async () => {
     const { user } = await openBar()
     await parse(user)
     const input = active()
-    const [tool, state, assignee] = bar().getAllByRole('button')
-    await user.keyboard('{Tab}')
-    expect(active()).toBe(tool)
-    await user.keyboard('{Tab}')
-    expect(active()).toBe(state)
-    await user.keyboard('{Tab}')
-    expect(active()).toBe(assignee)
+    const buttons = bar().getAllByRole('button')
+    expect(buttons.map((b) => b.textContent)).toEqual(['Work items', 'statebacklog', 'assigneePriya', 'Apply filter ↵'])
+    for (const button of buttons) {
+      await user.keyboard('{Tab}')
+      expect(active()).toBe(button)
+    }
     await user.keyboard('{Tab}')
     expect(active()).toBe(input)
     await user.keyboard('{Shift>}{Tab}{/Shift}')
-    expect(active()).toBe(assignee)
+    expect(active()).toBe(buttons.at(-1))
   })
 
   it('opens a chip’s dropdown, which takes Escape before the bar', async () => {
