@@ -1,21 +1,53 @@
 /**
- * Git helpers for the release scripts. `releaseCommits` is the one list of a
- * release's commits, which `npm run bump --dry-run` previews and the release
- * notes print.
+ * Git and Conventional Commits helpers for the release scripts.
+ * `releaseCommits` is the one list of a release's commits: `npm run bump
+ * auto` counts it, `--dry-run` previews it, and the release notes print the
+ * part `notedCommits` keeps.
  */
 import { execFileSync } from 'node:child_process'
 
 /**
- * The commits in the release `tag`, newest first, as `hash subject` lines:
- * every commit since the release tag before it, leaving out merges and the
- * `chore: release <tag>` commit itself. Before the bump, when neither the tag
- * nor its commit exists yet, it is the commits the bump would release.
+ * The commits in a release, newest first, as `{ hash, subject, kind }`:
+ * every commit since the last release tag, leaving out merges. Given the
+ * release's own `tag`, it counts from the tag before that one and leaves out
+ * the `chore: release <tag>` commit, so the list is the same before the bump
+ * and after it.
  */
 export function releaseCommits(tag) {
-  const log = git('log', '--no-merges', '--format=%h %s', sinceLast(lastTag(tag)))
+  const log = git('log', '--no-merges', '--format=%h %B%x00', sinceLast(lastTag(tag)))
   return log
-    .split('\n')
-    .filter((line) => line && line.slice(line.indexOf(' ') + 1) !== `chore: release ${tag}`)
+    .split('\0')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const [, hash, message] = /^(\S+) ?([\s\S]*)$/.exec(entry)
+      return { hash, subject: message.split('\n')[0], kind: kindOf(message) }
+    })
+    .filter(({ subject }) => !tag || subject !== `chore: release ${tag}`)
+}
+
+/**
+ * The commits the release notes list: the ones that change the version, a
+ * breaking change, feat, fix or perf. Docs, chore and the other types are
+ * left out. A release with none of them, forced with `npm run bump patch`,
+ * lists every commit instead, so its notes still say what changed.
+ */
+export function notedCommits(commits) {
+  const noted = commits.filter(({ kind }) => kind !== 'other')
+  return noted.length ? noted : commits
+}
+
+/**
+ * Sorts a commit message by its Conventional Commits type: `breaking` for a
+ * `!` or a `BREAKING CHANGE:` footer whatever the type, then `feat`, `fix`
+ * for a fix or perf, and `other` for the rest.
+ */
+function kindOf(message) {
+  const [, type, bang] = /^(\w+)(?:\([^)]*\))?(!)?: /.exec(message) ?? []
+  if (bang || /^BREAKING[ -]CHANGE: /m.test(message)) return 'breaking'
+  if (type === 'feat') return 'feat'
+  if (type === 'fix' || type === 'perf') return 'fix'
+  return 'other'
 }
 
 /**
@@ -28,7 +60,7 @@ export function lastTag(except) {
 }
 
 /** The `git log` range from a release tag to HEAD, or all of HEAD's history without one. */
-export function sinceLast(tag) {
+function sinceLast(tag) {
   return tag ? `${tag}..HEAD` : 'HEAD'
 }
 

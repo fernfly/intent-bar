@@ -2,8 +2,8 @@ name: Release
 
 # Pushing a tag such as v0.1.0 publishes that version to npm, with
 # provenance, and writes the GitHub release notes with the script tag, its
-# integrity hash and the commits since the last release. npm refuses while
-# package.json is still private.
+# integrity hash and the feat, fix and breaking commits since the last
+# release. npm refuses while package.json is still private.
 on:
   push:
     tags: ['v*']
