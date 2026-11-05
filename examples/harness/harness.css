@@ -1,0 +1,117 @@
+/* Plane today: propel's oklch tokens, dark keyed on [data-theme*="dark"] */
+html[data-vars="propel"] {
+  --neutral-black: oklch(0.1689 0.0021 286.18);
+  --neutral-white: oklch(1 0 0);
+  --neutral-100: oklch(0.9911 0 0);
+  --neutral-300: oklch(0.9614 0.0013 286.38);
+  --neutral-1200: oklch(0.1689 0.0021 286.18);
+  --brand-default: oklch(0.4799 0.1158 242.91);
+  --bg-canvas: var(--neutral-300);
+  --bg-surface-1: var(--neutral-white);
+  --txt-primary: var(--neutral-1200);
+}
+html[data-vars="propel"][data-theme*="dark"] {
+  --neutral-100: oklch(0.1917 0.002 286.21);
+  --neutral-1200: oklch(0.9235 0.001733 230.6853);
+  --brand-default: oklch(0.6311 0.126281 238.01);
+  --bg-canvas: var(--neutral-black);
+  --bg-surface-1: var(--neutral-100);
+}
+
+/* A Plane custom theme: brand and neutrals mixed from two base colours */
+html[data-vars="propel-custom"] {
+  --custom-brand-base: #c2410c;
+  --custom-neutral-base: oklch(0.55 0.03 160);
+  --brand-default: var(--custom-brand-base);
+  --bg-canvas: color-mix(in oklch, var(--custom-neutral-base), white 84%);
+  --bg-surface-1: color-mix(in oklch, var(--custom-neutral-base), white 100%);
+  --txt-primary: color-mix(in oklch, var(--custom-neutral-base), black 88%);
+}
+html[data-vars="propel-custom"][data-theme*="dark"] {
+  --bg-canvas: color-mix(in oklch, var(--custom-neutral-base), black 70%);
+  --bg-surface-1: color-mix(in oklch, var(--custom-neutral-base), black 56%);
+  --txt-primary: color-mix(in oklch, var(--custom-neutral-base), white 82%);
+}
+html[data-vars="propel"] body,
+html[data-vars="propel-custom"] body {
+  background: var(--bg-canvas);
+  color: var(--txt-primary);
+}
+
+/* Plane before propel: RGB triplets used as rgb(var(--x)) */
+html[data-vars="plane"] {
+  --color-primary-100: 63, 118, 255;
+  --color-background-100: 255, 255, 255;
+  --color-background-90: 247, 247, 247;
+  --color-text-100: 23, 23, 23;
+}
+html[data-vars="plane"].dark {
+  --color-background-100: 25, 25, 25;
+  --color-background-90: 32, 32, 32;
+  --color-text-100: 229, 229, 229;
+}
+html[data-vars="plane"] body {
+  background: rgb(var(--color-background-90));
+  color: rgb(var(--color-text-100));
+}
+
+/* shadcn/ui: HSL triplets used as hsl(var(--x)), dark keyed on .dark */
+html[data-vars="shadcn"] {
+  --background: 0 0% 100%;
+  --foreground: 222.2 84% 4.9%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222.2 84% 4.9%;
+  --primary: 222.2 47.4% 11.2%;
+  --accent: 210 40% 96.1%;
+}
+html[data-vars="shadcn"].dark {
+  --background: 222.2 84% 4.9%;
+  --foreground: 210 40% 98%;
+  --popover: 222.2 84% 4.9%;
+  --popover-foreground: 210 40% 98%;
+  --primary: 210 40% 98%;
+  --accent: 217.2 32.6% 17.5%;
+}
+html[data-vars="shadcn"] body {
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+}
+
+body {
+  margin: 0;
+  font: 15px/1.5 Georgia, "Times New Roman", serif;
+}
+.toolbar {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: inherit;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 15%, transparent);
+}
+main {
+  padding: 16px;
+}
+.muted {
+  opacity: 0.7;
+}
+.filler {
+  height: 2400px;
+}
+.palette {
+  position: fixed;
+  top: 20vh;
+  left: 50%;
+  translate: -50% 0;
+  width: min(420px, 90vw);
+  padding: 12px;
+  background: Canvas;
+  color: CanvasText;
+  border: 2px solid currentColor;
+}
+.palette input {
+  width: 100%;
+}

@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en" data-vars="propel">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Intent bar harness</title>
+    <link rel="stylesheet" href="./harness.css" />
+    <script src="./host.js" defer></script>
+  </head>
+  <body>
+    <header class="toolbar">
+      <strong>Intent bar harness</strong>
+      <label>
+        Variables
+        <select id="vars">
+          <option value="propel">Plane (propel, oklch)</option>
+          <option value="propel-custom">Plane custom theme (color-mix)</option>
+          <option value="plane">Plane, older (RGB triplets)</option>
+          <option value="shadcn">shadcn (HSL triplets)</option>
+        </select>
+      </label>
+      <button id="dark" type="button">Toggle dark</button>
+      <button id="open-bar" type="button">Open intent bar</button>
+      <input id="page-search" placeholder="A field on the page" />
+      <span id="mode" class="muted"></span>
+    </header>
+    <main>
+      <p>
+        Page shortcuts, bound on <code>document</code> the way Plane binds them: <kbd>c</kbd> creates a work item,
+        <kbd>g</kbd> then <kbd>p</kbd> goes to projects, and <kbd>⌘K</kbd> opens the page's own palette (add
+        <code>?palette=off</code> to hand ⌘K to the bar).
+      </p>
+      <h2>Fired on the page</h2>
+      <ol id="log"></ol>
+      <div class="filler" aria-hidden="true"></div>
+    </main>
+    <div id="palette" class="palette" role="dialog" aria-label="Page palette" hidden>
+      <input id="palette-input" placeholder="The page's palette" />
+    </div>
+    <div id="react-root"></div>
+  </body>
+</html>
