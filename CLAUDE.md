@@ -72,6 +72,8 @@ To release, run `npm run bump <patch|minor|major|x.y.z>` on a clean `main`. It w
 
 ## Commits
 
-Conventional Commits (`type: lowercase description`). Work on a feature branch and merge into `main` with `git merge --no-ff`. Commit once the work is done and checked, without waiting for a review, then give the user steps to test it. The user reviews after the commit, and their feedback comes back as follow-up changes. Push only when asked.
+Conventional Commits (`type: lowercase description`). Work on a feature branch. Commit there once the work is done and checked, without waiting for a review, then give the user steps to test it. The user reviews after the commit, and their feedback comes back as follow-up commits on the same branch.
+
+Merge into `main` with `git merge --no-ff` only when the user explicitly says to merge, never as the last step of finishing the work. Push only when asked.
 
 **This repository is public.** Nothing committed here, commit messages included, may name private repositories, local paths, internal issue numbers or people's accounts. Working notes that need them stay uncommitted.
