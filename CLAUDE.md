@@ -49,7 +49,8 @@ Node and npm are pinned by `.nvmrc` and `devEngines`.
   - Chips sit outside `Command`, whose root `onKeyDown` takes the arrows and Enter. A chip's dropdown is a nested `Command`.
   - Every Enter and Tab handler checks `isComposing`.
 - **Styles go in through `adoptedStyleSheets` only**, never a `<style>` element, so strict CSPs keep working.
-- **Build:** never touch `document` at import time; keep React a peer (`^18.2 || ^19`) and test on both; the IIFE defines `process.env.NODE_ENV`.
+- **Script tag:** anything the host passes no function for goes out as a `fernfly:preview`, `fernfly:run` or `fernfly:values` event on `window`, answered with `detail.respondWith()` during dispatch. Unanswered, a lookup passes the words through, a preview is skipped, and a run says the app hasn't connected it.
+- **Build:** never touch `document` at import time, except the IIFE reading its own `<script>` tag, which is only known while it runs; keep React a peer (`^18.2 || ^19`) and test on both; the IIFE defines `process.env.NODE_ENV`.
 
 ## Code style
 
@@ -59,6 +60,6 @@ Node and npm are pinned by `.nvmrc` and `devEngines`.
 
 ## Commits
 
-Conventional Commits (`type: lowercase description`). Work on a feature branch and merge into `main` with `git merge --no-ff`. Commit only after the user has reviewed the change, and push only when asked.
+Conventional Commits (`type: lowercase description`). Work on a feature branch and merge into `main` with `git merge --no-ff`. Commit once the work is done and checked, without waiting for a review, then give the user steps to test it. The user reviews after the commit, and their feedback comes back as follow-up changes. Push only when asked.
 
 **This repository is public.** Nothing committed here, commit messages included, may name private repositories, local paths, internal issue numbers or people's accounts. Working notes that need them stay uncommitted.

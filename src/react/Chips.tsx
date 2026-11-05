@@ -226,6 +226,7 @@ function LookupEditor(props: EditorProps & { name: string; label: string; resolv
     const timer = setTimeout(() => {
       Promise.resolve()
         .then(() => latestResolver.current(q, { context }))
+        .then((options) => options ?? [])
         .catch((): readonly LookupOption[] => [])
         .then((options) => live && setResults({ query: q, options }))
     }, 120)

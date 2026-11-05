@@ -46,7 +46,8 @@ export function useRunner(transport: Transport) {
         update(id, () => ({ id, kind: 'done', message, undo: result?.undo, corrected: false }))
         return { id, ok: true as const }
       } catch (err) {
-        update(id, () => ({ id, kind: 'failed', message: `Couldn't finish: ${messageOf(err)}` }))
+        const message = (err as Error | null)?.name === 'NotConnectedError' ? messageOf(err) : `Couldn't finish: ${messageOf(err)}`
+        update(id, () => ({ id, kind: 'failed', message }))
         return { id, ok: false as const }
       }
     },

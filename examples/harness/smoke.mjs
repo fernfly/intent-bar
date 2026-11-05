@@ -11,7 +11,7 @@ import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright-core'
-import { serve } from './serve.mjs'
+import { fakeApi, serve } from './serve.mjs'
 
 const port = Number(process.env.SMOKE_PORT ?? 4320)
 const out = process.env.SMOKE_OUT ?? fileURLToPath(new URL('./.build/', import.meta.url))
@@ -425,6 +425,89 @@ async function withTriggers(browser, mode) {
   await l.page.close()
 }
 
+/**
+ * The install with no JavaScript of the page's: the script tag's data
+ * attributes mount the bar, the default transport posts to the fake API,
+ * and the page answers the bar's events.
+ */
+async function withScriptTag(browser) {
+  const mode = 'tag'
+  const page = await browser.newPage({ viewport: { width: 1100, height: 760 } })
+  const errors = []
+  page.on('pageerror', (e) => errors.push(e.message))
+  page.on('console', (m) => ['error', 'warning'].includes(m.type()) && errors.push(`${m.type()}: ${m.text()}`))
+  await page.addInitScript(installHelpers)
+  fakeApi.requests.length = 0
+  await page.goto(`http://127.0.0.1:${port}/examples/harness/script-tag.html`)
+  await page.waitForFunction(() => window.harnessReady && document.querySelector('fernfly-intent-bar'))
+  const t = (fn, arg) => page.evaluate(fn, arg)
+  const runnable = () => page.waitForFunction(() => window.t.q('button.primary')?.disabled === false)
+  const ask = async (sentence) => {
+    await page.keyboard.press('ControlOrMeta+k')
+    await page.waitForFunction(() => window.t.isOpen())
+    await page.keyboard.type(sentence)
+    await page.keyboard.press('Enter')
+    await page.locator('.chips').waitFor()
+    await runnable()
+  }
+
+  await ask('move backlog for priya')
+  const line = await t(() => window.t.text('.result-line'))
+  await page.keyboard.press('Enter')
+  await page.locator('.confirm').waitFor()
+  await page.keyboard.press('Enter')
+  await page.waitForFunction(() => /\d of \d/.test(window.t.text('.toast') ?? ''))
+  await page.locator('.toast', { hasText: 'Moved 3 items' }).waitFor()
+  const infer = fakeApi.requests[0]
+  check(
+    mode,
+    'the tag alone mounts the bar; it asks the endpoint over fetch, and the page answers preview and run events',
+    infer?.path === '/fake-api/infer' &&
+      infer.body.utterance === 'move backlog for priya' &&
+      infer.body.meta?.source === 'intent-bar' &&
+      line === 'Move 3 backlog items to priya' &&
+      (await t(() => window.hostEvents.runs.length)) === 1,
+    `${JSON.stringify(infer?.body)} | ${line}`,
+  )
+
+  await ask('move backlog for priya')
+  await page.locator('[data-arg="state"]').click()
+  await page.keyboard.press('ControlOrMeta+a')
+  await page.keyboard.type('todo')
+  await page.keyboard.press('Enter')
+  await runnable()
+  await page.locator('button.primary').click()
+  await page.locator('.confirm').waitFor()
+  await page.keyboard.press('Enter')
+  await page.locator('.toast-note').waitFor()
+  const correction = fakeApi.requests.find((r) => r.path === '/fake-api/corrections')
+  check(
+    mode,
+    'an edited call posts its correction to the endpoint once it runs',
+    correction?.body.log_ref === 'api-update' && correction.body.call.arguments.state === 'todo' && correction.body.call.name === 'update_work_items',
+    JSON.stringify(correction?.body),
+  )
+
+  await ask('archive old cycles now')
+  await page.keyboard.press('Enter')
+  const title = await t(() => window.t.text('.confirm-title'))
+  await page.keyboard.press('Enter')
+  await page.locator('.toast', { hasText: "This app hasn't connected that yet." }).waitFor()
+  check(mode, 'a tool nothing answers confirms by its name, then says it is not connected', title === 'Run archive_cycles?', title)
+
+  await page.keyboard.press('ControlOrMeta+k')
+  await page.keyboard.type('slow down please now')
+  await page.keyboard.press('Enter')
+  await page.locator('.notice').waitFor()
+  check(mode, 'a 429 from the endpoint leaves search working, with a notice', (await t(() => window.t.text('.notice'))) === 'Too many requests right now. Search still works.')
+
+  const csp = await t(() => window.cspViolations)
+  check(mode, 'no CSP violations, fetch included', csp.length === 0, csp.join('; '))
+  const unexpected = errors.filter((e) => !/status of 429/.test(e)) // Chrome logs the 429 this page asks for
+  check(mode, 'no page errors (script tag only)', unexpected.length === 0, unexpected.join(' | ').slice(0, 300))
+  await page.close()
+}
+
 /** The checks with the page palette off, so the bar takes ⌘K, as it would if it replaced Power K. */
 async function withoutPagePalette(browser, mode) {
   const h = await openPage(browser, mode, '&palette=off')
@@ -453,6 +536,7 @@ try {
     await withStates(browser, mode)
     await withTriggers(browser, mode)
   }
+  await withScriptTag(browser)
 } finally {
   await browser.close()
   server.close()

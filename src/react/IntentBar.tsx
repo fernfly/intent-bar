@@ -32,6 +32,8 @@ export interface IntentBarProps {
   transport?: Transport
   /** How each tool is labelled, previewed and run. */
   tools?: Readonly<Record<string, ToolConfig>>
+  /** The config for a call to a tool `tools` doesn't list, such as one generic handler for every tool. */
+  fallbackTool?: (name: string) => ToolConfig | undefined
   /** Lookups for workspace data, per entity name. */
   values?: Readonly<Record<string, ValueResolver>>
   /** The host's context, read when the bar opens and again for each preview and run. */
@@ -160,6 +162,7 @@ export function IntentBar(props: IntentBarProps) {
           transport={transport}
           pages={props.pages}
           tools={props.tools ?? NO_TOOLS}
+          fallbackTool={props.fallbackTool}
           values={props.values}
           getContext={getContext}
           navigate={navigate}

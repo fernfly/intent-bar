@@ -33,7 +33,10 @@ export function useResolutions(
       started.current.add(key)
       Promise.resolve()
         .then(() => resolver(String(value), { context }))
-        .then(fromMatches, (): Resolution => ({ status: 'failed' }))
+        .then(
+          (matches) => fromMatches(matches, value, (v) => valueLabel(v, arg)),
+          (): Resolution => ({ status: 'failed' }),
+        )
         .then((resolution) => setFound((f) => ({ ...f, [key]: resolution })))
     }
   }, [call, tool, values, context])

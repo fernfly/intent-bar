@@ -1,6 +1,7 @@
 import {
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -73,6 +74,7 @@ export interface OverlayProps {
   transport: Transport
   pages: readonly BarPage[] | undefined
   tools: Readonly<Record<string, ToolConfig>>
+  fallbackTool: ((name: string) => ToolConfig | undefined) | undefined
   values: Readonly<Record<string, ValueResolver>> | undefined
   getContext: () => HostContext
   navigate: (href: string) => void
@@ -91,7 +93,7 @@ export interface OverlayProps {
  * Escape and focus return. Mounted only while open, so each open starts fresh.
  */
 export function Overlay(props: OverlayProps) {
-  const { mount, hotkey, transport, tools, values, getContext, navigate, appName, placeholder, request, onClose, onRun } = props
+  const { mount, hotkey, transport, tools, fallbackTool, values, getContext, navigate, appName, placeholder, request, onClose, onRun } = props
   const panelRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const editorRef = useRef<HTMLDivElement>(null)
@@ -137,7 +139,8 @@ export function Overlay(props: OverlayProps) {
     pendingFocus.current = target
   }
 
-  const tool = draft ? tools[draft.call.name] : undefined
+  const toolName = draft?.call.name
+  const tool = useMemo(() => (toolName === undefined ? undefined : (tools[toolName] ?? fallbackTool?.(toolName))), [toolName, tools, fallbackTool])
   const kind = kindOf(tool)
   const resolutions = useResolutions(draft?.call ?? null, tool, values, context, draft?.picks ?? NO_PICKS)
   const entries = Object.entries(resolutions)
