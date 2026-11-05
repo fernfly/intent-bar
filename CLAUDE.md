@@ -21,7 +21,12 @@ A project with no API key is judged by its origin allow-list. A project with a k
 npm run build      # tsup: ESM + CJS for React, plus dist/intent-bar.global.js for a script tag
 npm run typecheck  # tsc --noEmit
 npm run test       # vitest (happy-dom)
+npm run harness    # serves examples/ at http://127.0.0.1:4319: the harness, its script-tag page, examples/vanilla
+npm run smoke      # browser checks in Chromium, after a build; REACT_FROM=<node_modules> runs the React page on another React
+npm run size       # the script-tag build's size and integrity hash, after a build
 ```
+
+The browser checks use Playwright's headless Chromium (`npx playwright-core install --only-shell chromium`), or the binary at `CHROMIUM_PATH`. CI runs them on React 19 and 18.3.
 
 Node and npm are pinned by `.nvmrc` and `devEngines`.
 
@@ -57,6 +62,10 @@ Node and npm are pinned by `.nvmrc` and `devEngines`.
 - Document exported or non-trivial functions with a JSDoc block. Below that level, default to no comment.
 - Never mention an issue id in a code comment.
 - Prose (README, docs, UI copy) uses plain language and no em dashes.
+
+## Releasing
+
+Pushing a tag `vX.Y.Z` runs `.github/workflows/release.yml`: it checks the tag against `package.json`, tests, builds, publishes to npm with provenance, and writes the GitHub release notes from `npm run size`, which give the pinned script tag and its integrity hash. It needs an `NPM_TOKEN` secret. To release, set `version` (and remove `"private": true` for the first release) in a commit on `main`, then tag it. Tags are pushes, so only when the user asks.
 
 ## Commits
 

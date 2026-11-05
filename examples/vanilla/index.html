@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tasks: an intent bar example</title>
+    <link rel="stylesheet" href="./style.css" />
+    <!-- In your app, use the pinned CDN script tag with its integrity hash, from the README. -->
+    <script src="../../dist/intent-bar.global.js" defer></script>
+    <script src="./app.js" defer></script>
+  </head>
+  <body>
+    <header>
+      <strong>Tasks</strong>
+      <nav>
+        <a href="#/inbox">Inbox</a>
+        <a href="#/projects">Projects</a>
+        <a href="#/settings">Settings</a>
+      </nav>
+      <input id="search" type="search" placeholder="Search or ask" aria-label="Search or ask" />
+    </header>
+    <main>
+      <p id="summary"></p>
+      <ul id="tasks"></ul>
+      <p class="hint">
+        Press <kbd>⌘K</kbd> or click the search field, then try "open tasks for ana", "tasks for ben due this week",
+        "my tasks" or "complete ana's tasks".
+      </p>
+    </main>
+  </body>
+</html>
