@@ -18,7 +18,7 @@ It ships as a React component and as a script tag for apps that don't use React.
 
 ## Status
 
-Pre-release. Nothing is published yet. The first release will be 0.1.0, and the API may change before 1.0.
+Early. The package is on npm, and the API may change before 1.0.
 
 ## Install
 
