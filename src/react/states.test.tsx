@@ -1,7 +1,7 @@
 import { cleanup, render, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { Call, InferResponse, LookupOption, ToolConfig, Transport } from '../core/types'
+import type { Call, HostContext, InferResponse, LookupOption, ToolConfig, Transport } from '../core/types'
 import { IntentBar, type IntentBarProps } from './IntentBar'
 
 const members: LookupOption[] = [
@@ -83,7 +83,7 @@ async function setup(answers: Parameters<typeof makeTransport>[0] = {}, props: P
   const { tools, undo } = makeTools()
   const values = { member: vi.fn(async (q: string) => members.filter((m) => m.label.toLowerCase().includes(q.toLowerCase()))) }
   const navigate = vi.fn()
-  render(
+  const element = (more: Partial<IntentBarProps> = {}) => (
     <IntentBar
       transport={transport}
       tools={tools}
@@ -96,14 +96,18 @@ async function setup(answers: Parameters<typeof makeTransport>[0] = {}, props: P
       appName="Acme"
       hotkey="ctrl+k"
       {...props}
-    />,
+      {...more}
+    />
   )
+  const { rerender } = render(element())
   await user.keyboard('{Control>}k{/Control}')
   const ask = async (sentence: string) => {
     await user.keyboard(sentence)
     await user.keyboard('{Enter}')
   }
-  return { user, transport, tools, undo, values, navigate, ask }
+  /** Renders the bar again, as a host does when its own state changes. */
+  const update = (more: Partial<IntentBarProps> = {}) => rerender(element(more))
+  return { user, transport, tools, undo, values, navigate, ask, update }
 }
 
 afterEach(() => {
@@ -212,6 +216,43 @@ describe('03 parsed', () => {
     await waitFor(() => expect(primary().disabled).toBe(false))
     await user.keyboard('{Enter}')
     expect(tools.list_issues.run).toHaveBeenCalledWith({ assignee: null }, expect.anything())
+  })
+
+  it('resolves `current` from context the host gained after the bar opened', async () => {
+    let current: HostContext['current'] = {}
+    const { user, tools, ask } = await setup(
+      { 'work assigned to me': parsed({ name: 'list_issues', arguments: { assignee: 'current' } }) },
+      { context: () => ({ current }) },
+    )
+    current = { member: { id: 'u9', label: 'You' } }
+    await ask('work assigned to me')
+    await waitFor(() => expect(chip('assignee').textContent).toBe('assigneeYou'))
+    await user.keyboard('{Enter}')
+    expect(tools.list_issues.run).toHaveBeenCalledWith({ assignee: 'u9' }, expect.anything())
+  })
+
+  it('resolves a blocked `current` once the host renders with it, without reopening', async () => {
+    let current: HostContext['current'] = {}
+    const context = () => ({ current })
+    const { ask, update } = await setup({ 'work assigned to me': parsed({ name: 'list_issues', arguments: { assignee: 'current' } }) }, { context })
+    await ask('work assigned to me')
+    await waitFor(() => expect(resultLine()).toBe('There is no current assignee here.'))
+    current = { member: { id: 'u9', label: 'You' } }
+    update()
+    await waitFor(() => expect(chip('assignee').textContent).toBe('assigneeYou'))
+    expect(primary().disabled).toBe(false)
+  })
+
+  it('keeps one context while the host’s answer reads the same, so a lookup runs once', async () => {
+    const context = vi.fn(() => ({ current: {}, workspace: 'acme' }))
+    const { values, ask, update } = await setup({ 'backlog for priya': parsed({ name: 'list_issues', arguments: { assignee: 'priya' } }) }, { context })
+    await ask('backlog for priya')
+    await waitFor(() => expect(chip('assignee').dataset.status).toBe('resolved'))
+    update()
+    update()
+    await waitFor(() => expect(resultLine()).toBe('4 work items'))
+    expect(context.mock.calls.length).toBeGreaterThan(2)
+    expect(values.member).toHaveBeenCalledTimes(1)
   })
 
   it('says when the app has not connected a tool', async () => {
