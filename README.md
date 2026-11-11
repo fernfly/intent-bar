@@ -231,6 +231,17 @@ values={{
 
 One match resolves the chip. Several ask the user to choose, and `detail` tells them apart. None blocks the run until the user picks a value. A lookup can return `null` to let the words through unchanged, and an entity with no lookup does the same.
 
+A lookup also gets `call`, the call as it stands, for a value that belongs to another argument, such as a label in the project the sentence names:
+
+```ts
+label: async (query, { call, context }) => {
+  const project = await findProject(call.arguments.project ?? 'current', context)
+  return (await api.searchLabels(project.id, query)).map((l) => ({ id: l.id, label: l.name }))
+},
+```
+
+The call's arguments are in the user's words, as the model returned them, so `project` here may be "web" or `current`, or missing. The bar sees which arguments a lookup reads, and runs the lookup again when the user changes one of them. A choice between that lookup's matches holds only while those arguments stay the same.
+
 Two words are reserved for what a model can't know:
 
 - `none` resolves to `null`, as in "unassigned".
@@ -298,7 +309,7 @@ Any tool or lookup you give no function for asks your page through an event on `
 |---|---|---|---|
 | `fernfly:preview` | `tool`, `args`, `raw`, `call`, `utterance`, `context` | A preview | No preview |
 | `fernfly:run` | The same, plus `progress(done, total)` | `{ message, undo, items }`, or nothing | "This app hasn't connected that yet." |
-| `fernfly:values` | `entity`, `query`, `context` | An array of `{ id, label, detail }`, or `null` | The words pass through |
+| `fernfly:values` | `entity`, `query`, `context`, `call` | An array of `{ id, label, detail }`, or `null` | The words pass through |
 
 ```js
 addEventListener('fernfly:values', (e) => {

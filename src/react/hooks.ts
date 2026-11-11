@@ -1,11 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
 import { sameValue, valueLabel } from '../core/call'
-import { fromMatches, lookupKey, resolveLocally, type Pick, type Resolution } from '../core/lookup'
+import { fromMatches, lookupKey, readsHold, resolveLocally, watchReads, type Pick, type Reads, type Resolution } from '../core/lookup'
 import type { Call, HandlerContext, HostContext, Preview, ResolvedArgs, ToolConfig, ValueResolver } from '../core/types'
 
 /** The message of anything thrown. */
 export function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+/** One lookup's answer, with what it read of the call it ran for. */
+interface Found {
+  resolution: Resolution
+  reads: Reads
 }
 
 /**
@@ -23,8 +29,9 @@ export function useHostContext(getContext: () => HostContext): HostContext {
 
 /**
  * Where each of the call's arguments stands. Entity arguments are looked up
- * through `values`, once per entity and words while the bar is open, and a
- * pick between matches holds while the words stay the same.
+ * through `values`, once per entity and words while the bar is open, and
+ * again when an argument the lookup read changes. A pick holds while its
+ * words stay the same and the arguments its lookup read do too.
  */
 export function useResolutions(
   call: Call | null,
@@ -33,35 +40,44 @@ export function useResolutions(
   context: HostContext,
   picks: Readonly<Record<string, Pick>>,
 ): Record<string, Resolution> {
-  const [found, setFound] = useState<Record<string, Resolution>>({})
+  const [found, setFound] = useState<Record<string, readonly Found[]>>({})
   const started = useRef(new Set<string>())
 
   useEffect(() => {
-    for (const [name, value] of Object.entries(call?.arguments ?? {})) {
+    if (!call) return
+    for (const [name, value] of Object.entries(call.arguments)) {
       const arg = tool?.args?.[name]
       const resolver = arg?.entity ? values?.[arg.entity] : undefined
       if (!arg?.entity || !resolver || resolveLocally(value, arg, values, context, String)) continue
       const key = lookupKey(arg.entity, value)
-      if (started.current.has(key)) continue
-      started.current.add(key)
+      const run = `${key}\u0000${JSON.stringify(call)}`
+      if (found[key]?.some((f) => readsHold(f.reads, call)) || started.current.has(run)) continue
+      started.current.add(run)
+      const watched = watchReads(call, Object.keys(tool?.args ?? {}))
       Promise.resolve()
-        .then(() => resolver(String(value), { context }))
+        .then(() => resolver(String(value), { context, call: watched.call }))
         .then(
           (matches) => fromMatches(matches, value, (v) => valueLabel(v, arg)),
           (): Resolution => ({ status: 'failed' }),
         )
-        .then((resolution) => setFound((f) => ({ ...f, [key]: resolution })))
+        .then((resolution) => {
+          const reads = watched.reads()
+          const entry = { resolution: resolution.status === 'choose' ? { ...resolution, reads } : resolution, reads }
+          setFound((f) => ({ ...f, [key]: [...(f[key] ?? []), entry] }))
+        })
     }
   }, [call, tool, values, context])
 
   const out: Record<string, Resolution> = {}
-  for (const [name, value] of Object.entries(call?.arguments ?? {})) {
+  if (!call) return out
+  for (const [name, value] of Object.entries(call.arguments)) {
     const arg = tool?.args?.[name]
     const local = resolveLocally(value, arg, values, context, (v) => valueLabel(v, arg))
     const pick = picks[name]
+    const entry = found[lookupKey(arg?.entity ?? '', value)]?.find((f) => readsHold(f.reads, call))
     if (local) out[name] = local
-    else if (pick && sameValue(pick.raw, value)) out[name] = { status: 'resolved', value: pick.option.id, label: pick.option.label }
-    else out[name] = found[lookupKey(arg?.entity ?? '', value)] ?? { status: 'pending' }
+    else if (pick && sameValue(pick.raw, value) && readsHold(pick.reads, call)) out[name] = { status: 'resolved', value: pick.option.id, label: pick.option.label }
+    else out[name] = entry?.resolution ?? { status: 'pending' }
   }
   return out
 }

@@ -97,9 +97,18 @@ describe('withEvents', () => {
 describe('eventValues', () => {
   it('asks for values by entity, and declines when unanswered', async () => {
     const lookup = eventValues('member', target)
-    expect(lookup('sam', { context: {} })).toBeNull()
+    const call = { name: 'assign', arguments: { assignee: 'sam' } }
+    expect(lookup('sam', { context: {}, call })).toBeNull()
     on(EVENT_NAMES.values, (e) => e.detail.respondWith(e.detail.entity === 'member' ? [{ id: 'u2', label: `${e.detail.query} lee` }] : []))
-    await expect(lookup('sam', { context: {} })).resolves.toEqual([{ id: 'u2', label: 'sam lee' }])
+    await expect(lookup('sam', { context: {}, call })).resolves.toEqual([{ id: 'u2', label: 'sam lee' }])
+  })
+
+  it('hands the listener the call', () => {
+    const heard: unknown[] = []
+    on(EVENT_NAMES.values, (e) => heard.push(e.detail.call))
+    const call = { name: 'list', arguments: { project: 'web', label: 'bug' } }
+    eventValues('label', target)('bug', { context: {}, call })
+    expect(heard).toEqual([call])
   })
 })
 

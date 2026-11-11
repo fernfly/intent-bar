@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { fromMatches, lookupKey, resolveLocally } from './lookup'
+import { fromMatches, lookupKey, readsHold, readsWithout, resolveLocally, watchReads } from './lookup'
 import type { ArgConfig, ValueResolver } from './types'
 
 const member: ArgConfig = { entity: 'member' }
@@ -48,5 +48,51 @@ describe('lookupKey', () => {
   it('separates entities and value types', () => {
     expect(lookupKey('member', '1')).not.toBe(lookupKey('member', 1))
     expect(lookupKey('member', 'x')).not.toBe(lookupKey('project', 'x'))
+  })
+})
+
+describe('watchReads', () => {
+  const call = { name: 'list', arguments: { project: 'web', label: 'bug' } }
+
+  it('reads like the call, and records the arguments read, absent ones included', () => {
+    const watched = watchReads(call, ['cycle'])
+    expect(watched.call.arguments.project).toBe('web')
+    expect(watched.call.arguments.cycle).toBeUndefined()
+    expect(Object.keys(watched.call.arguments)).toEqual(['project', 'label'])
+    expect(watched.reads()).toEqual({ args: { project: 'web', cycle: undefined } })
+  })
+
+  it('records the tool name, and everything a copy reads', () => {
+    const watched = watchReads(call)
+    expect(JSON.parse(JSON.stringify(watched.call))).toEqual(call)
+    expect(structuredClone(watched.call)).toEqual(call)
+    expect(watched.reads('label')).toEqual({ name: 'list', args: { project: 'web' } })
+  })
+
+  it('is read-only', () => {
+    const watched = watchReads(call)
+    expect(() => ((watched.call.arguments as Record<string, unknown>).project = 'mobile')).toThrow()
+    expect(call.arguments.project).toBe('web')
+  })
+})
+
+describe('readsHold', () => {
+  const call = { name: 'list', arguments: { project: 'web', label: 'bug' } }
+
+  it('holds while the arguments read keep their values', () => {
+    expect(readsHold({ args: { project: 'web' } }, { ...call, arguments: { ...call.arguments, label: 'ui' } })).toBe(true)
+    expect(readsHold(undefined, call)).toBe(true)
+    expect(readsHold({ args: {} }, { name: 'other', arguments: {} })).toBe(true)
+  })
+
+  it('fails when an argument read changes, is added or is removed, or the tool read changes', () => {
+    expect(readsHold({ args: { project: 'web' } }, { ...call, arguments: { project: 'mobile' } })).toBe(false)
+    expect(readsHold({ args: { cycle: undefined } }, { ...call, arguments: { ...call.arguments, cycle: 'c7' } })).toBe(false)
+    expect(readsHold({ args: { project: 'web' } }, { ...call, arguments: { label: 'bug' } })).toBe(false)
+    expect(readsHold({ name: 'list', args: {} }, { ...call, name: 'update' })).toBe(false)
+  })
+
+  it('can leave out the argument being looked up', () => {
+    expect(readsWithout({ name: 'list', args: { project: 'web', label: 'bug' } }, 'label')).toEqual({ name: 'list', args: { project: 'web' } })
   })
 })
