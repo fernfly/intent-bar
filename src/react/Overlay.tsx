@@ -179,15 +179,16 @@ export function Overlay(props: OverlayProps) {
     if (!draft) return null
     if (applying === draft) return { text: 'Applying filter…', tone: 'wait' }
     if (!tool?.run) return { text: "This app hasn't connected that yet.", tone: 'stop' }
+    // Built from the user's words, since a label such as "assign to" doesn't read as a noun.
     for (const [name, r] of entries) {
-      const label = tool.args?.[name]?.label ?? name
       const raw = draft.call.arguments[name]
-      if (r.status === 'choose') return { text: `Choose which ${label} you mean.`, tone: 'stop' }
+      const words = `“${valueLabel(raw, undefined)}”`
+      if (r.status === 'choose') return { text: `${words} matches more than one. Choose one.`, tone: 'stop' }
       if (r.status === 'missing') {
-        const text = raw === 'current' ? `There is no current ${label} here.` : `No ${label} matches “${valueLabel(raw, undefined)}”.`
+        const text = raw === 'current' ? `There is no current ${tool.args?.[name]?.label ?? name} here.` : `Nothing matches ${words}.`
         return { text, tone: 'stop' }
       }
-      if (r.status === 'failed') return { text: `Couldn't look up ${label}.`, tone: 'stop' }
+      if (r.status === 'failed') return { text: `Couldn't look up ${words}.`, tone: 'stop' }
     }
     if (entries.some(([, r]) => r.status === 'pending')) return { text: 'Looking up…', tone: 'wait' }
     if (kind === 'action' && preview.status === 'loading') return { text: 'Counting…', tone: 'wait' }
