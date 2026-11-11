@@ -4,6 +4,11 @@ name: Release
 # provenance, and writes the GitHub release notes with the script tag, its
 # integrity hash and the feat, fix and breaking commits since the last
 # release. npm refuses while package.json is still private.
+#
+# npm trusts this workflow through OIDC (hence id-token: write), so no npm
+# token is stored anywhere. The package's trusted publisher on npmjs.com names
+# this repository and this file, with no environment. Renaming the file or
+# giving the job an environment breaks publishing until the publisher matches.
 on:
   push:
     tags: ['v*']
@@ -24,6 +29,9 @@ jobs:
         with:
           node-version-file: .nvmrc
           registry-url: https://registry.npmjs.org
+          # setup-node turns on npm caching by itself because devEngines names
+          # npm. A release build shouldn't restore a cache.
+          package-manager-cache: false
       - name: Use the npm version devEngines asks for
         run: |
           version=$(node -p "require('./package.json').devEngines.packageManager.version")
@@ -40,8 +48,6 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - name: Create the GitHub release
         run: |
           npm run size --silent > "$RUNNER_TEMP/notes.md"
