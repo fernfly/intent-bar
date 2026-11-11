@@ -97,10 +97,24 @@ export interface RunContext extends HandlerContext {
   progress(done: number, total?: number): void
 }
 
+/** A row a filter's run lists in the bar. Picking it goes to `href`. */
+export interface ResultItem {
+  label: string
+  /** Shown beside the label, such as an id or a state. */
+  detail?: string
+  href: string
+}
+
 /** What `run` may return. `undo` puts an Undo button on the notice that follows. */
 export interface RunResult {
   message?: string
   undo?: () => unknown
+  /**
+   * A filter's matching rows, for the bar to list when the host's own list
+   * can't show that filter. An empty list reads "Nothing matches". Other
+   * kinds of tool ignore it.
+   */
+  items?: readonly ResultItem[]
 }
 
 /** A second thing the parsed call can lead to, such as "Email all 51". It always confirms. */

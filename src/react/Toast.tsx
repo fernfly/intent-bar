@@ -44,25 +44,28 @@ export function useRunner(transport: Transport) {
         const result = await work((done, total) => update(id, (t) => (t.kind === 'running' ? { ...t, done, total } : t)))
         const message = result?.message ?? (quiet ? undefined : 'Done')
         update(id, () => ({ id, kind: 'done', message, undo: result?.undo, corrected: false }))
-        return { id, ok: true as const }
+        return { id, ok: true as const, result }
       } catch (err) {
         const message = (err as Error | null)?.name === 'NotConnectedError' ? messageOf(err) : `Couldn't finish: ${messageOf(err)}`
         update(id, () => ({ id, kind: 'failed', message }))
-        return { id, ok: false as const }
+        return { id, ok: false as const, result: undefined }
       }
     },
     [update],
   )
 
+  /** Runs a request, then sends its correction. Resolves with the run's result, or nothing when the run failed. */
   const start = useCallback(
-    async (request: RunRequest) => {
-      const { id, ok } = await track(request.label, request.run, request.quiet)
+    async (request: RunRequest): Promise<RunResult | void> => {
+      const { id, ok, result } = await track(request.label, request.run, request.quiet)
       const send = latestTransport.current.correct
-      if (!ok || !request.correction || !send) return
-      send(request.correction).then(
-        () => update(id, (t) => (t.kind === 'done' ? { ...t, corrected: true } : t)),
-        () => {},
-      )
+      if (ok && request.correction && send) {
+        send(request.correction).then(
+          () => update(id, (t) => (t.kind === 'done' ? { ...t, corrected: true } : t)),
+          () => {},
+        )
+      }
+      return result
     },
     [track, update],
   )

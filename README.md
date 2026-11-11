@@ -106,7 +106,7 @@ FernflyIntentBar.init({ project: 'YOUR_PUBLIC_ID', appName: 'Acme', tools: { lis
 
 1. **Search.** Short queries search your pages and tool names on every keystroke, with no model call. From three words, or when nothing matches, an "Ask" item is pinned first, and Enter sends the sentence to the model.
 2. **Chips.** The model's call shows as chips: the tool, then one chip per argument. Lookups turn the user's words into your app's values, and the tool's `preview` counts what the call would touch.
-3. **Run.** A filter or a navigation runs on Enter. Anything else confirms first, with the preview's summary and sample rows, then runs with progress, and with Undo when your run returns one.
+3. **Run.** A filter or a navigation runs on Enter. Anything else confirms first, with the preview's summary and sample rows, then runs with progress, and with Undo when your run returns one. A filter your own list can't show can hand its matching rows back for the bar to list.
 4. **Correct.** Tab moves through the chips and Enter opens one, to change its value or remove it. "+ add" adds an argument the model missed, and the tool chip switches tools. Running an edited call sends it to Fernfly as a correction.
 
 ## Connecting to Fernfly
@@ -169,7 +169,7 @@ tools={{
 | `examples` | Sentences shown on the empty bar, up to three across all tools. |
 | `args` | How each argument reads and is edited. See below. |
 | `preview(args, ctx)` | What the call would touch. It runs whenever the chips change and every value has resolved, and may return nothing. |
-| `run(args, ctx)` | Runs the call, and may return `{ message, undo }`. |
+| `run(args, ctx)` | Runs the call, and may return `{ message, undo }`. A filter's run may also return `items`, the rows for the bar to list. See [A filter's rows](#a-filters-rows). |
 | `confirm` | `false` skips the confirm step for an action, but only when the preview counts one item or fewer. Bulk work always confirms. |
 
 `args` holds the resolved arguments: an entity argument holds the matched value's `id`, or `null` for `none`. `ctx` holds `raw` (the arguments in the user's words, before lookups), `call`, `utterance` and `context`. In `run`, `ctx.progress(done, total)` shows progress while a long run goes.
@@ -197,6 +197,26 @@ A call to a tool that `tools` doesn't list, or that has no `run`, can't run, and
 | `undoable` | Adds "You can undo this afterwards." to the confirm step. |
 | `confirmLabel` | The run button's label. Defaults to "Run". |
 | `actions` | More buttons beside the run button, such as "Email all 51": `{ label, summary?, undoable?, run(ctx) }`. They always confirm. |
+
+### A filter's rows
+
+Sometimes your own list can't show a filter, such as "unassigned bugs" in an app whose filters have no "is empty". The filter's `run` can then return the matching rows, and the bar lists them:
+
+```ts
+run: async (args) => {
+  if (canFilter(args)) return applyFilter(args)
+  const issues = await api.findIssues(args)
+  return { items: issues.map((i) => ({ label: i.title, detail: i.key, href: `/issues/${i.id}` })) }
+},
+```
+
+| Field | What it does |
+|---|---|
+| `label` | The row's text. |
+| `detail` | Text beside the label, such as an id or a state. |
+| `href` | Where the row goes. Enter or a click passes it to `navigate`. |
+
+The bar stays open while a filter runs. Then it lists the rows under the preview's summary, or their count, with the first one selected: the arrow keys move through them, and Escape closes the bar. An empty list reads "Nothing matches." A run that returns no `items` closes the bar. Only a filter's run lists rows.
 
 ## Lookups
 
@@ -277,7 +297,7 @@ Any tool or lookup you give no function for asks your page through an event on `
 | Event | `detail` | Answer | If nobody answers |
 |---|---|---|---|
 | `fernfly:preview` | `tool`, `args`, `raw`, `call`, `utterance`, `context` | A preview | No preview |
-| `fernfly:run` | The same, plus `progress(done, total)` | `{ message, undo }`, or nothing | "This app hasn't connected that yet." |
+| `fernfly:run` | The same, plus `progress(done, total)` | `{ message, undo, items }`, or nothing | "This app hasn't connected that yet." |
 | `fernfly:values` | `entity`, `query`, `context` | An array of `{ id, label, detail }`, or `null` | The words pass through |
 
 ```js
