@@ -45,6 +45,8 @@ export interface ValuesEventDetail extends RespondableDetail<readonly LookupOpti
   entity: string
   query: string
   context: HostContext
+  /** The call as it stands, in the user's words. Reading another argument runs the lookup again when that argument changes. */
+  call: Call
 }
 
 declare global {
@@ -103,7 +105,7 @@ export function withEvents(name: string, tool: ToolConfig | undefined, target: E
 
 /** A lookup that asks the host through `fernfly:values`. Unanswered, it declines, and the words pass through. */
 export function eventValues(entity: string, target: EventTarget): ValueResolver {
-  return (query, { context }) => request<readonly LookupOption[] | null>(target, EVENT_NAMES.values, { entity, query, context })
+  return (query, { context, call }) => request<readonly LookupOption[] | null>(target, EVENT_NAMES.values, { entity, query, context, call })
 }
 
 /** Every entity the tools' arguments name. */

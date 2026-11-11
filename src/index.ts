@@ -12,6 +12,7 @@ export type {
   HostContext,
   InferRequest,
   InferResponse,
+  LookupContext,
   LookupOption,
   Preview,
   PreviewAction,

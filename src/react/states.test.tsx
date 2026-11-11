@@ -1,7 +1,7 @@
 import { cleanup, render, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { Call, HostContext, InferResponse, LookupOption, ToolConfig, Transport } from '../core/types'
+import type { Call, HostContext, InferResponse, LookupContext, LookupOption, ToolConfig, Transport } from '../core/types'
 import { IntentBar, type IntentBarProps } from './IntentBar'
 
 const members: LookupOption[] = [
@@ -539,5 +539,96 @@ describe('07 results', () => {
     await new Promise((r) => setTimeout(r, 10))
     expect(isOpen()).toBe(true)
     expect(bar().queryByRole('listbox', { name: 'Results' })).toBeNull()
+  })
+})
+
+describe('lookups that read the call', () => {
+  const LABELS: Record<string, LookupOption[]> = {
+    web: [{ id: 'l-web', label: 'bug' }],
+    mobile: [
+      { id: 'l-mob', label: 'bug' },
+      { id: 'l-mob-old', label: 'bug (old)' },
+    ],
+  }
+
+  /** A filter over bugs, whose label lookup reads the call's project, or the context's when the call names none. */
+  function scoped() {
+    const run = vi.fn()
+    const tools: Record<string, ToolConfig> = {
+      list_bugs: {
+        kind: 'filter',
+        label: 'Bugs',
+        args: {
+          project: { label: 'project', enum: ['web', 'mobile'] },
+          label: { label: 'label', entity: 'label' },
+          state: { label: 'state', enum: STATES },
+        },
+        run,
+      },
+    }
+    const label = vi.fn((query: string, { call, context }: LookupContext) => {
+      const project = (call.arguments.project ?? context.project ?? 'web') as string
+      return LABELS[project]!.filter((l) => l.label.startsWith(query))
+    })
+    return { tools, values: { label }, run, label }
+  }
+
+  const edit = async (user: ReturnType<typeof userEvent.setup>, arg: string, value: string) => {
+    chip(arg).focus()
+    await user.keyboard('{Enter}')
+    await user.keyboard(`${value}{Enter}`)
+  }
+
+  it('gives a lookup the call, and runs it again only when an argument it read changes', async () => {
+    const { tools, values, run, label } = scoped()
+    const { user, ask } = await setup(
+      { 'web bugs in backlog': parsed({ name: 'list_bugs', arguments: { project: 'web', label: 'bug (', state: 'backlog' } }) },
+      { tools, values },
+    )
+    await ask('web bugs in backlog')
+    await waitFor(() => expect(chip('label').dataset.status).toBe('missing'))
+    expect(label.mock.calls[0]![1].call).toEqual({ name: 'list_bugs', arguments: { project: 'web', label: 'bug (', state: 'backlog' } })
+
+    await edit(user, 'state', 'todo')
+    expect(chip('state').textContent).toBe('statetodo')
+    await edit(user, 'project', 'mobile')
+    await waitFor(() => expect(chip('label').textContent).toBe('labelbug (old)'))
+    expect(label).toHaveBeenCalledTimes(2)
+    await user.click(primary())
+    expect(run).toHaveBeenCalledWith({ project: 'mobile', label: 'l-mob-old', state: 'todo' }, expect.anything())
+  })
+
+  it('runs a lookup again when an argument it read that the call lacked is added', async () => {
+    const { tools, values, label } = scoped()
+    const { user, ask } = await setup({ 'bugs labelled bug': parsed({ name: 'list_bugs', arguments: { label: 'bug' } }) }, { tools, values })
+    await ask('bugs labelled bug')
+    await waitFor(() => expect(chip('label').textContent).toBe('labelbug'))
+    await user.click(bar().getByRole('button', { name: '+ add' }))
+    await user.click(await bar().findByRole('option', { name: 'project' }))
+    await user.keyboard('mobile{Enter}')
+    await waitFor(() => expect(chip('label').dataset.status).toBe('choose'))
+    expect(label).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps a pick only while the arguments its lookup read stay the same', async () => {
+    const { tools, values, run } = scoped()
+    const { user, ask } = await setup(
+      { 'mobile bugs labelled bug': parsed({ name: 'list_bugs', arguments: { project: 'mobile', label: 'bug' } }) },
+      { tools, values },
+    )
+    await ask('mobile bugs labelled bug')
+    await waitFor(() => expect(chip('label').dataset.status).toBe('choose'))
+    chip('label').focus()
+    await user.keyboard('{Enter}')
+    await user.click(await bar().findByRole('option', { name: 'bug (old)' }))
+    expect(chip('label').textContent).toBe('labelbug (old)')
+
+    await edit(user, 'project', 'web')
+    await waitFor(() => expect(chip('label').textContent).toBe('labelbug'))
+    expect(chip('label').dataset.status).toBe('resolved')
+    await edit(user, 'project', 'mobile')
+    expect(chip('label').textContent).toBe('labelbug (old)')
+    await user.click(primary())
+    expect(run).toHaveBeenCalledWith({ project: 'mobile', label: 'l-mob-old' }, expect.anything())
   })
 })

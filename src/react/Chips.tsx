@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as Rea
 import { CommandEmpty, CommandInput, CommandItem, CommandList, CommandRoot, defaultFilter } from 'cmdk'
 import { coerce, missingArgs, optionsFor, typeOf, valueLabel } from '../core/call'
 import { isComposing } from '../core/hotkey'
-import type { Resolution } from '../core/lookup'
+import { watchReads, type Reads, type Resolution } from '../core/lookup'
 import type { ArgConfig, Call, HostContext, LookupOption, ToolConfig, ValueResolver } from '../core/types'
 
 /** Which editor is open: the tool chip's, "+ add", or one argument's. `adding` is set for an argument "+ add" picked. */
@@ -108,7 +108,8 @@ interface EditorProps {
   values: Readonly<Record<string, ValueResolver>> | undefined
   context: HostContext
   editorRef: RefObject<HTMLDivElement | null>
-  onSet: (name: string, value: unknown, option?: LookupOption) => void
+  /** Sets a value. `option` and `reads` come with a value picked from a search: the pick, and what that search read. */
+  onSet: (name: string, value: unknown, option?: LookupOption, reads?: Reads) => void
   onPick: (name: string, option: LookupOption) => void
   onRemove: (name: string) => void
   onSwitchTool: (name: string) => void
@@ -214,27 +215,29 @@ function ListEditor({ label, items, current, editorRef, onCancel, shouldFilter =
 function LookupEditor(props: EditorProps & { name: string; label: string; resolver: ValueResolver; remove: Item[] }) {
   const { name, label, resolver, resolution, context, remove } = props
   const [query, setQuery] = useState('')
-  const [results, setResults] = useState<{ query: string; options: readonly LookupOption[] } | null>(null)
+  const [results, setResults] = useState<{ query: string; options: readonly LookupOption[]; reads: Reads } | null>(null)
   const matches = resolution?.status === 'choose' ? resolution.options : []
   const q = query.trim()
-  const latestResolver = useRef(resolver)
-  latestResolver.current = resolver
+  const latest = useRef({ resolver, call: props.call, tool: props.tool })
+  latest.current = { resolver, call: props.call, tool: props.tool }
 
   useEffect(() => {
     if (!q) return
     let live = true
     const timer = setTimeout(() => {
+      const { resolver: find, call, tool } = latest.current
+      const watched = watchReads(call, Object.keys(tool?.args ?? {}))
       Promise.resolve()
-        .then(() => latestResolver.current(q, { context }))
+        .then(() => find(q, { context, call: watched.call }))
         .then((options) => options ?? [])
         .catch((): readonly LookupOption[] => [])
-        .then((options) => live && setResults({ query: q, options }))
+        .then((options) => live && setResults({ query: q, options, reads: watched.reads(name) }))
     }, 120)
     return () => {
       live = false
       clearTimeout(timer)
     }
-  }, [q, context])
+  }, [q, context, name])
 
   const searching = q !== '' && results?.query !== q
   const options = q ? (searching ? [] : (results?.options ?? [])) : matches
@@ -242,7 +245,7 @@ function LookupEditor(props: EditorProps & { name: string; label: string; resolv
     key: `id:${option.id}`,
     label: option.label,
     detail: option.detail,
-    onSelect: () => (matches.some((m) => m.id === option.id) ? props.onPick(name, option) : props.onSet(name, option.label, option)),
+    onSelect: () => (matches.some((m) => m.id === option.id) ? props.onPick(name, option) : props.onSet(name, option.label, option, results?.reads)),
   }))
   const note = searching ? <p className="picker-note">Looking up</p> : q || matches.length ? undefined : <p className="picker-note">Type to search {label}</p>
   return (

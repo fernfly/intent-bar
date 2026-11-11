@@ -12,7 +12,7 @@ import { flushSync } from 'react-dom'
 import { CommandGroup, CommandInput, CommandItem, CommandList, CommandRoot } from 'cmdk'
 import { examplesFrom, isCorrection, kindOf, needsConfirm, removeArg, setArg, switchTool, valueLabel } from '../core/call'
 import { hasModifier, isComposing, matchesHotkey, type Hotkey } from '../core/hotkey'
-import type { Pick } from '../core/lookup'
+import { readsWithout, type Pick, type Reads } from '../core/lookup'
 import { cycleFocus, deepActiveElement, isFocusable, lockScroll, returnFocus } from '../core/overlay'
 import { pagesFromNav, relatedPages, shouldAsk } from '../core/router'
 import type { ShadowMount } from '../core/shadow'
@@ -270,17 +270,19 @@ export function Overlay(props: OverlayProps) {
     return rest
   }
 
-  const onSet = (name: string, value: unknown, option?: LookupOption) => {
+  const onSet = (name: string, value: unknown, option?: LookupOption, reads?: Reads) => {
     update((d) => ({
       ...d,
       call: setArg(d.call, name, value),
-      picks: option ? { ...d.picks, [name]: { raw: value, option } } : withoutPick(d.picks, name),
+      picks: option ? { ...d.picks, [name]: { raw: value, option, reads } } : withoutPick(d.picks, name),
     }))
     closeEditor(name)
   }
 
   const onPick = (name: string, option: LookupOption) => {
-    update((d) => ({ ...d, picks: { ...d.picks, [name]: { raw: d.call.arguments[name], option } } }))
+    const shown = resolutions[name]
+    const reads = readsWithout(shown?.status === 'choose' ? shown.reads : undefined, name)
+    update((d) => ({ ...d, picks: { ...d.picks, [name]: { raw: d.call.arguments[name], option, reads } } }))
     closeEditor(name)
   }
 

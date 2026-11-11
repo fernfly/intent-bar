@@ -153,6 +153,17 @@ export interface ToolConfig {
   run?(args: ResolvedArgs, ctx: RunContext): RunResult | void | Promise<RunResult | void>
 }
 
+/** What a lookup receives beside the user's words. */
+export interface LookupContext {
+  context: HostContext
+  /**
+   * The call as it stands, in the user's words, for a value scoped by another
+   * argument, such as a label in the project the sentence names. The bar sees
+   * which arguments the lookup reads, and runs it again when one changes.
+   */
+  call: Call
+}
+
 /**
  * Finds workspace values for the user's words. One match resolves, several
  * ask the user to choose, none blocks the run. `null` declines the lookup,
@@ -160,5 +171,5 @@ export interface ToolConfig {
  */
 export type ValueResolver = (
   query: string,
-  ctx: { context: HostContext },
+  ctx: LookupContext,
 ) => readonly LookupOption[] | null | undefined | Promise<readonly LookupOption[] | null | undefined>
