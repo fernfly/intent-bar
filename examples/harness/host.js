@@ -11,7 +11,9 @@
  *
  * The fake model answers by pattern: "weather" is out of scope, "slow down"
  * is rate limited, "move backlog … to sam lee" is a bulk update that
- * confirms, and anything else lists work items ("… for sam" finds two Sams).
+ * confirms, "unassigned …" is a filter the page's own list can't show, so
+ * its run returns the rows, and anything else lists work items ("… for sam"
+ * finds two Sams).
  */
 ;(() => {
   const params = new URLSearchParams(location.search)
@@ -118,7 +120,8 @@
     ['Cycle burndown chart', 'todo', 'high', 'u-priya'],
     ['Webhook retries', 'in_progress', 'urgent', 'u-sam-lee'],
     ['Archive old drafts', 'done', 'medium', 'u-alex'],
-  ].map(([title, state, priority, assignee]) => ({ title, state, priority, assignee }))
+    ['Triage new signups', 'todo', 'medium', null],
+  ].map(([title, state, priority, assignee], i) => ({ key: `PLN-${i + 1}`, title, state, priority, assignee }))
 
   /** The work items an argument set matches. An unset argument matches everything, and a null assignee matches the unassigned. */
   const matching = (args) =>
@@ -129,7 +132,7 @@
         (args.assignee === undefined || w.assignee === args.assignee),
     )
 
-  /** Stands in for the infer endpoint, by pattern: weather is out of scope, "slow down" is rate limited, "move … to …" is a bulk update, and anything else lists work items. */
+  /** Stands in for the infer endpoint, by pattern: weather is out of scope, "slow down" is rate limited, "move … to …" is a bulk update, "unassigned" lists the unassigned, and anything else lists work items. */
   const transport = {
     async infer({ utterance }) {
       events.inferCalls++
@@ -139,6 +142,9 @@
       const move = /move (\w+) .*to ([\w ]+)$/i.exec(utterance)
       if (move) {
         return { calls: [{ name: 'bulk_update_work_items', arguments: { state: move[1], set_assignee: move[2] } }], latency_ms: 91, log_ref: 'fake-move' }
+      }
+      if (/unassigned/i.test(utterance)) {
+        return { calls: [{ name: 'list_work_items', arguments: { assignee: 'none' } }], latency_ms: 77, log_ref: 'fake-unassigned' }
       }
       const assignee = /for (\w+)/i.exec(utterance)?.[1] ?? 'current'
       return { calls: [{ name: 'list_work_items', arguments: { state: 'backlog', priority: 'high', assignee } }], latency_ms: 84, log_ref: 'fake-list' }
@@ -192,6 +198,10 @@
         run: (args, ctx) => {
           events.runs.push({ tool: 'list_work_items', args, raw: ctx.raw })
           note(`ran Work items: ${JSON.stringify(args)}`)
+          // Like Plane's filters, the page's list has no "is empty", so the bar lists the unassigned itself.
+          if (args.assignee !== null) return
+          const items = matching(args).map((w) => ({ label: w.title, detail: w.key, href: `#/work-items/${w.key.toLowerCase()}` }))
+          return { items }
         },
       },
       bulk_update_work_items: {

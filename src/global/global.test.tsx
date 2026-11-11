@@ -84,6 +84,17 @@ describe('the script-tag build’s events', () => {
     expect(run).toHaveBeenCalledWith({ assignee: 'priya' })
   })
 
+  it('lists the rows a filter’s run answers with', async () => {
+    on('fernfly:run', (e) => e.detail.respondWith({ items: [{ label: 'Fix login', href: '#/items/1' }] }))
+    const navigate = vi.fn()
+    const t = transport({ calls: [{ name: 'list', arguments: {} }], log_ref: 'r' })
+    const user = await ask({ transport: t, hotkey: false, navigate, tools: { list: { kind: 'filter' } } }, 'unassigned bugs this cycle')
+    await waitFor(() => expect(primary().disabled).toBe(false))
+    await user.click(primary())
+    await user.click(await bar().findByRole('option', { name: 'Fix login' }))
+    expect(navigate).toHaveBeenCalledWith('#/items/1')
+  })
+
   it('uses the host’s own functions over events', async () => {
     const heard = vi.fn()
     on('fernfly:run', heard)

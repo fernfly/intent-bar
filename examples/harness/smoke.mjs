@@ -332,6 +332,34 @@ async function withStates(browser, mode) {
 
   await h.reset()
   await h.openBar()
+  await h.ask('unassigned work items please')
+  await page.waitForFunction(() => window.t.text('.result-line') === '2 work items')
+  await page.keyboard.press('Enter')
+  await page.locator('[cmdk-list][aria-label="Results"] [cmdk-item]').first().waitFor()
+  const listed = await h.t(() => ({
+    heading: window.t.text('[cmdk-group-heading]'),
+    rows: [...window.t.q('[cmdk-list]').querySelectorAll('[cmdk-item]')].map((i) => i.textContent),
+    selected: window.t.text('[cmdk-item][data-selected="true"]'),
+    focus: window.t.active(),
+  }))
+  if (mode === 'react') await page.screenshot({ path: join(out, 'propel-light-results.png') })
+  await page.keyboard.press('ArrowDown')
+  await page.keyboard.press('Enter')
+  ev = await h.events()
+  check(
+    mode,
+    'a filter that returns rows lists them, and Enter opens the selected one',
+    listed.heading === '2 work items' &&
+      listed.rows.join() === 'Update onboarding copyPLN-6,Triage new signupsPLN-10' &&
+      listed.selected === listed.rows[0] &&
+      listed.focus === 'input' &&
+      ev.navigations.join() === '#/work-items/pln-10' &&
+      !(await h.isOpen()),
+    `${listed.heading} | ${listed.rows.join(', ')} | selected ${listed.selected} | focus ${listed.focus} | went to ${ev.navigations.join()}`,
+  )
+
+  await h.reset()
+  await h.openBar()
   await h.ask('move backlog items to sam lee')
   await h.runnable()
   const runLabel = await page.locator('button.primary').textContent()

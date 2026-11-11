@@ -8,6 +8,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   type SyntheticEvent,
 } from 'react'
+import { flushSync } from 'react-dom'
 import { CommandGroup, CommandInput, CommandItem, CommandList, CommandRoot } from 'cmdk'
 import { examplesFrom, isCorrection, kindOf, needsConfirm, removeArg, setArg, switchTool, valueLabel } from '../core/call'
 import { hasModifier, isComposing, matchesHotkey, type Hotkey } from '../core/hotkey'
@@ -25,6 +26,8 @@ import type {
   LookupOption,
   PreviewAction,
   ResolvedArgs,
+  ResultItem,
+  RunResult,
   ToolConfig,
   Transport,
   ValueResolver,
@@ -55,7 +58,7 @@ const ignoreRepeat = (e: ReactKeyboardEvent) => {
   if (e.key === 'Enter' && e.repeat) e.preventDefault()
 }
 
-type Phase = 'search' | 'loading' | 'parsed' | 'confirm' | 'out_of_scope'
+type Phase = 'search' | 'loading' | 'parsed' | 'confirm' | 'results' | 'out_of_scope'
 
 /** The call being shown and edited, with what the model returned for comparison. */
 interface Draft {
@@ -83,7 +86,8 @@ export interface OverlayProps {
   /** Text to start with, from `open({query})` or an attached field. A new request replaces the text. */
   request: OpenRequest | null
   onClose: () => void
-  onRun: (request: RunRequest) => void
+  /** Hands a run to the host. Resolves with its result, or nothing when it failed. */
+  onRun: (request: RunRequest) => Promise<RunResult | void>
   /** Called as the bar hands focus back to `to` on close, so focus arriving there isn't mistaken for the user's. */
   onReturnFocus: (to: Element | null) => void
 }
@@ -114,6 +118,19 @@ export function Overlay(props: OverlayProps) {
   const [draft, setDraft] = useState<Draft | null>(null)
   const [editor, setEditor] = useState<EditorTarget | null>(null)
   const [action, setAction] = useState<PreviewAction | null>(null)
+  const [applying, setApplying] = useState<Draft | null>(null)
+  const [results, setResults] = useState<readonly ResultItem[]>([])
+  const [selected, setSelected] = useState('')
+  const latestDraft = useRef(draft)
+  latestDraft.current = draft
+  const live = useRef(true)
+
+  useEffect(() => {
+    live.current = true
+    return () => {
+      live.current = false
+    }
+  }, [])
 
   useLayoutEffect(() => {
     const doc = mount.host.ownerDocument
@@ -160,6 +177,7 @@ export function Overlay(props: OverlayProps) {
   /** Why the call can't run yet, if it can't. `wait` clears by itself; `stop` needs the user. */
   const blocker = ((): { text: string; tone: 'wait' | 'stop' } | null => {
     if (!draft) return null
+    if (applying === draft) return { text: 'Applying filter…', tone: 'wait' }
     if (!tool?.run) return { text: "This app hasn't connected that yet.", tone: 'stop' }
     for (const [name, r] of entries) {
       const label = tool.args?.[name]?.label ?? name
@@ -182,6 +200,7 @@ export function Overlay(props: OverlayProps) {
     if (!utterance) return
     const id = ++requestId.current
     setPhase('loading')
+    setSelected('')
     setNotice(null)
     setEditor(null)
     setDraft(null)
@@ -218,6 +237,7 @@ export function Overlay(props: OverlayProps) {
   const startTool = (name: string) => {
     setDraft({ utterance: '', call: { name, arguments: {} }, picks: {} })
     setPhase('parsed')
+    setSelected('')
   }
 
   const go = (page: BarPage) => {
@@ -284,18 +304,42 @@ export function Overlay(props: OverlayProps) {
     focusLater(() => runRef.current)
   }
 
+  /**
+   * Hands the call, or a preview action, to the host. The bar closes as the
+   * run starts, except for a filter, whose run may answer with rows to list
+   * here: the bar waits for it, then lists the rows or closes.
+   */
   const execute = (act: PreviewAction | null) => {
     if (!draft || !resolvedArgs || (!act && !tool?.run)) return
     const { call, utterance, logRef, model } = draft
     const args = resolvedArgs
     const run = tool?.run
     const base: HandlerContext = { call, raw: call.arguments, utterance, context: getContext() }
-    onClose()
-    onRun({
+    const request: RunRequest = {
       label: act ? (act.summary ?? act.label) : (ready?.summary ?? tool?.label ?? call.name),
       quiet: !act && kind !== 'action',
       run: async (progress) => (act ? act.run({ ...base, progress }) : run!(args, { ...base, progress })),
       correction: !act && logRef && isCorrection(model, call) ? { log_ref: logRef, call } : null,
+    }
+    if (act || kind !== 'filter') {
+      onClose()
+      void onRun(request)
+      return
+    }
+    setApplying(draft)
+    focusLater(() => inputRef.current)
+    void onRun(request).then((result) => {
+      if (!live.current || latestDraft.current !== draft) return
+      const items = result?.items
+      focusLater(() => inputRef.current)
+      // Before the next paint, so a run that answers at once never shows "Applying filter…".
+      flushSync(() => {
+        if (!items) return onClose()
+        setApplying(null)
+        setResults(items)
+        setPhase('results')
+        setEditor(null)
+      })
     })
   }
 
@@ -392,7 +436,15 @@ export function Overlay(props: OverlayProps) {
         onKeyDownCapture={onKeyDownCapture}
         onKeyDown={onKeyDown}
       >
-        <CommandRoot label="Intent bar" loop filter={filter} shouldFilter={phase === 'search'}>
+        {/* cmdk keeps the value of an item that has gone, so past search the selection is held here, cleared before each new list. */}
+        <CommandRoot
+          label="Intent bar"
+          loop
+          filter={filter}
+          shouldFilter={phase === 'search'}
+          value={phase === 'search' ? undefined : selected}
+          onValueChange={setSelected}
+        >
           <CommandInput
             ref={inputRef}
             value={search}
@@ -425,6 +477,21 @@ export function Overlay(props: OverlayProps) {
               {pages.length > 0 && <CommandGroup heading="Pages">{pageItems(pages)}</CommandGroup>}
             </CommandList>
           )}
+          {phase === 'results' &&
+            (results.length > 0 ? (
+              <CommandList label="Results">
+                <CommandGroup heading={ready?.summary ?? `${results.length} found`}>
+                  {results.map((item, i) => (
+                    <CommandItem key={i} value={`result:${i}`} keywords={[item.label]} onSelect={() => go(item)}>
+                      <span>{item.label}</span>
+                      {item.detail && <span className="item-detail">{item.detail}</span>}
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              </CommandList>
+            ) : (
+              <p className="note">Nothing matches.</p>
+            ))}
           {phase === 'out_of_scope' && (
             <>
               <p className="note">That is not something {appName} can do.</p>
@@ -526,6 +593,11 @@ export function Overlay(props: OverlayProps) {
             {phase === 'parsed' && (
               <>
                 <kbd>Tab</kbd> chips,{' '}
+              </>
+            )}
+            {phase === 'results' && results.length > 0 && (
+              <>
+                <kbd>↵</kbd> open,{' '}
               </>
             )}
             <kbd>Esc</kbd> {phase === 'confirm' ? 'back' : 'close'}

@@ -397,7 +397,7 @@ describe('05 correct', () => {
 
 describe('06 out of scope', () => {
   it('says what the app cannot do and offers related pages and examples', async () => {
-    const { ask } = await setup({ 'what is the weather in projects': { calls: [], out_of_scope: true, reply: 'x', log_ref: 'r' } })
+    const { user, navigate, ask } = await setup({ 'what is the weather in projects': { calls: [], out_of_scope: true, reply: 'x', log_ref: 'r' } })
     await ask('what is the weather in projects')
     await bar().findByText('That is not something Acme can do.')
     expect(bar().getAllByRole('option').map((o) => o.textContent)).toEqual([
@@ -407,5 +407,96 @@ describe('06 out of scope', () => {
       'my urgent bugs',
     ])
     expect(shadow().querySelector('.footer')?.textContent).toContain('Saved for review')
+    await user.keyboard('{Enter}')
+    expect(navigate).toHaveBeenCalledWith('/projects')
+  })
+})
+
+describe('07 results', () => {
+  const backlog = { 'unassigned backlog work': parsed({ name: 'list_issues', arguments: { state: 'backlog', assignee: 'none' } }) }
+  const rows = [
+    { label: 'Fix login', detail: 'MOB-1', href: '/items/1' },
+    { label: 'Update docs', href: '/items/2' },
+  ]
+
+  /** The shared tools, with a filter whose run answers with `run`. */
+  function listing(run: ToolConfig['run']) {
+    const { tools } = makeTools()
+    return { ...tools, list_issues: { ...tools.list_issues, run: vi.fn(run) } }
+  }
+
+  it('lists the rows a filter’s run returns, and Enter opens the selected one', async () => {
+    const tools = listing(async () => ({ items: rows }))
+    const { user, navigate, ask } = await setup(backlog, { tools })
+    await ask('unassigned backlog work')
+    await waitFor(() => expect(primary().disabled).toBe(false))
+    await user.keyboard('{Enter}')
+    const results = await bar().findByRole('listbox', { name: 'Results' })
+    expect(within(results).getAllByRole('option').map((o) => o.textContent)).toEqual(['Fix loginMOB-1', 'Update docs'])
+    expect(shadow().querySelector('[cmdk-group-heading]')?.textContent).toBe('4 work items')
+    expect(shadow().querySelector('[cmdk-item][data-selected="true"]')?.textContent).toBe('Fix loginMOB-1')
+    expect(active()).toBe(shadow().querySelector('[cmdk-input]'))
+    expect(shadow().querySelector('.footer')?.textContent).toContain('↵ open')
+    await user.keyboard('{ArrowDown}{Enter}')
+    expect(navigate).toHaveBeenCalledWith('/items/2')
+    expect(isOpen()).toBe(false)
+    expect(tools.list_issues.run).toHaveBeenCalledTimes(1)
+  })
+
+  it('opens a row on click, and closes on Escape', async () => {
+    const tools = listing(async () => ({ items: rows }))
+    const { user, navigate, ask } = await setup(backlog, { tools })
+    await ask('unassigned backlog work')
+    await waitFor(() => expect(primary().disabled).toBe(false))
+    await user.click(primary())
+    await user.click(await bar().findByRole('option', { name: 'Update docs' }))
+    expect(navigate).toHaveBeenCalledWith('/items/2')
+
+    await user.keyboard('{Control>}k{/Control}')
+    await ask('unassigned backlog work')
+    await waitFor(() => expect(primary().disabled).toBe(false))
+    await user.keyboard('{Enter}')
+    await bar().findByRole('listbox', { name: 'Results' })
+    await user.keyboard('{Escape}')
+    expect(isOpen()).toBe(false)
+    expect(navigate).toHaveBeenCalledTimes(1)
+  })
+
+  it('waits while the run is in flight', async () => {
+    let answer!: (result: { items: typeof rows }) => void
+    const tools = listing(() => new Promise((resolve) => (answer = resolve)))
+    const { user, ask } = await setup(backlog, { tools })
+    await ask('unassigned backlog work')
+    await waitFor(() => expect(primary().disabled).toBe(false))
+    await user.keyboard('{Enter}{Enter}')
+    expect(resultLine()).toBe('Applying filter…')
+    expect(primary().disabled).toBe(true)
+    expect(tools.list_issues.run).toHaveBeenCalledTimes(1)
+    answer({ items: rows })
+    await bar().findByRole('listbox', { name: 'Results' })
+  })
+
+  it('says so when the list is empty', async () => {
+    const { user, ask } = await setup(backlog, { tools: listing(async () => ({ items: [] })) })
+    await ask('unassigned backlog work')
+    await waitFor(() => expect(primary().disabled).toBe(false))
+    await user.keyboard('{Enter}')
+    await bar().findByText('Nothing matches.')
+    expect(bar().queryByRole('option')).toBeNull()
+  })
+
+  it('drops the rows of a run whose bar was closed meanwhile', async () => {
+    let answer!: (result: { items: typeof rows }) => void
+    const tools = listing(() => new Promise((resolve) => (answer = resolve)))
+    const { user, ask } = await setup(backlog, { tools })
+    await ask('unassigned backlog work')
+    await waitFor(() => expect(primary().disabled).toBe(false))
+    await user.keyboard('{Enter}{Escape}')
+    expect(isOpen()).toBe(false)
+    await user.keyboard('{Control>}k{/Control}')
+    answer({ items: rows })
+    await new Promise((r) => setTimeout(r, 10))
+    expect(isOpen()).toBe(true)
+    expect(bar().queryByRole('listbox', { name: 'Results' })).toBeNull()
   })
 })

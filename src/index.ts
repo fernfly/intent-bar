@@ -16,6 +16,7 @@ export type {
   Preview,
   PreviewAction,
   ResolvedArgs,
+  ResultItem,
   RunContext,
   RunResult,
   ToolConfig,
