@@ -300,7 +300,7 @@ async function withStates(browser, mode) {
     mode,
     'two matches ask for a choice and block the run, and the pick runs without a correction',
     blocked.disabled &&
-      blocked.line === 'Choose which assignee you mean.' &&
+      blocked.line === '“sam” matches more than one. Choose one.' &&
       options[0] === 'Sam Leesam.lee@example.com' &&
       ev.runs[0]?.args.assignee === 'u-sam-ortiz' &&
       ev.corrections.length === 0 &&

@@ -183,7 +183,7 @@ describe('03 parsed', () => {
     })
     await ask('backlog for sam now')
     await waitFor(() => expect(chip('assignee').dataset.status).toBe('choose'))
-    expect(resultLine()).toBe('Choose which assignee you mean.')
+    expect(resultLine()).toBe('“sam” matches more than one. Choose one.')
     expect(primary().disabled).toBe(true)
     chip('assignee').focus()
     await user.keyboard('{Enter}')
@@ -202,9 +202,26 @@ describe('03 parsed', () => {
   it('blocks the run when a lookup finds nothing', async () => {
     const { ask } = await setup({ 'backlog for zed now': parsed({ name: 'list_issues', arguments: { assignee: 'zed' } }) })
     await ask('backlog for zed now')
-    await waitFor(() => expect(resultLine()).toBe('No assignee matches “zed”.'))
+    await waitFor(() => expect(resultLine()).toBe('Nothing matches “zed”.'))
     expect(chip('assignee').dataset.status).toBe('missing')
     expect(primary().disabled).toBe(true)
+  })
+
+  it('asks for a choice in the user’s words for an argument the call sets', async () => {
+    const { ask } = await setup({ 'assign the backlog to sam': parsed({ name: 'bulk_update', arguments: { state: 'backlog', set_assignee: 'sam' } }) })
+    await ask('assign the backlog to sam')
+    await waitFor(() => expect(chip('set_assignee').dataset.status).toBe('choose'))
+    expect(resultLine()).toBe('“sam” matches more than one. Choose one.')
+  })
+
+  it('says which words a failed lookup was for', async () => {
+    const { ask } = await setup(
+      { 'assign the backlog to sam': parsed({ name: 'bulk_update', arguments: { state: 'backlog', set_assignee: 'sam' } }) },
+      { values: { member: async () => Promise.reject(new Error('offline')) } },
+    )
+    await ask('assign the backlog to sam')
+    await waitFor(() => expect(resultLine()).toBe("Couldn't look up “sam”."))
+    expect(chip('set_assignee').dataset.status).toBe('failed')
   })
 
   it('resolves `none` to null and `current` from the host context', async () => {
