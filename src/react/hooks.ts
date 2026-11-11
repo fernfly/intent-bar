@@ -9,6 +9,19 @@ export function messageOf(error: unknown): string {
 }
 
 /**
+ * The host's context, read again on every render, so a value the host loads
+ * after the bar opens, such as the current cycle, still resolves. The same
+ * object is kept while the host's answer reads the same, so lookups and
+ * other effects that depend on it don't rerun.
+ */
+export function useHostContext(getContext: () => HostContext): HostContext {
+  const kept = useRef<HostContext | null>(null)
+  const next = getContext()
+  if (kept.current === null || !sameValue(kept.current, next)) kept.current = next
+  return kept.current
+}
+
+/**
  * Where each of the call's arguments stands. Entity arguments are looked up
  * through `values`, once per entity and words while the bar is open, and a
  * pick between matches holds while the words stay the same.

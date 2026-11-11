@@ -36,7 +36,7 @@ export interface IntentBarProps {
   fallbackTool?: (name: string) => ToolConfig | undefined
   /** Lookups for workspace data, per entity name. */
   values?: Readonly<Record<string, ValueResolver>>
-  /** The host's context, read when the bar opens and again for each preview and run. */
+  /** The host's context, read whenever the open bar redraws and again for each preview and run. Keep it quick. */
   context?: () => HostContext
   /** Pages for instant search. Defaults to the links in the page's `<nav>`. */
   pages?: readonly BarPage[]

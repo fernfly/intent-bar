@@ -240,7 +240,7 @@ Two words are reserved for what a model can't know:
 context={() => ({ current: { cycle: { id: cycle.id, label: cycle.name } }, workspace: slug })}
 ```
 
-The bar reads `context` when it opens and again for each preview and run, and passes it to lookups and handlers.
+The bar reads `context` whenever it redraws and again for each preview and run, and passes it to lookups and handlers. A `current` your app loads after the bar opens resolves at the next redraw: when the model answers, when the user edits a chip, or when your app renders the bar again. Keep `context` quick and free of side effects, since the bar calls it often.
 
 ## Corrections
 

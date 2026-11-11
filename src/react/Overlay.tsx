@@ -34,7 +34,7 @@ import type {
 } from '../core/types'
 import { ChipRow, Editor, TOOL_CHIP, chipKeyFor, labelFilter, type EditorTarget } from './Chips'
 import type { OpenRequest } from './controller'
-import { usePreview, useResolutions } from './hooks'
+import { useHostContext, usePreview, useResolutions } from './hooks'
 import type { RunRequest } from './Toast'
 
 const ASK = '\u0000ask'
@@ -110,7 +110,7 @@ export function Overlay(props: OverlayProps) {
   const requestId = useRef(0)
   const appliedRequest = useRef(0)
   const [pages] = useState(() => props.pages ?? pagesFromNav(mount.host.ownerDocument))
-  const [context] = useState(getContext)
+  const context = useHostContext(getContext)
   const [search, setSearch] = useState(request?.query ?? '')
   const [phase, setPhase] = useState<Phase>('search')
   const [notice, setNotice] = useState<string | null>(null)
