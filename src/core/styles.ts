@@ -190,13 +190,18 @@ button.primary kbd { opacity: 0.8; }
 .toast-count, .toast-note { font-size: 12px; color: color-mix(in srgb, currentColor 62%, transparent); }
 .footer {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
-  gap: 12px;
+  gap: 4px 12px;
   padding: 8px 12px;
   font-size: 12px;
   color: var(--fb-muted);
   border-top: 1px solid var(--fb-border);
 }
+.footer-keys { margin-left: auto; }
+.brand { color: inherit; text-decoration: none; border-radius: 3px; }
+.brand:hover { color: var(--fb-text, currentColor); text-decoration: underline; text-underline-offset: 2px; }
+.brand:focus-visible { outline: 2px solid var(--fb-accent); outline-offset: 2px; }
 kbd { font-family: var(--fb-mono); font-size: 11px; }
 `
 

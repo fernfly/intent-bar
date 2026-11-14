@@ -109,6 +109,8 @@ FernflyIntentBar.init({ project: 'YOUR_PUBLIC_ID', appName: 'Acme', tools: { lis
 3. **Run.** A filter or a navigation runs on Enter. Anything else confirms first, with the preview's summary and sample rows, then runs with progress, and with Undo when your run returns one. A filter your own list can't show can hand its matching rows back for the bar to list.
 4. **Correct.** Tab moves through the chips and Enter opens one, to change its value or remove it. "+ add" adds an argument the model missed, and the tool chip switches tools. Running an edited call sends it to Fernfly as a correction.
 
+The bar's own words are written for the person typing, so they never mention the model or how long it took. While a sentence is being answered, the bar shows "Working on it…", which screen readers announce. The footer reads "Powered by Fernfly", linking to fernfly.com in a new tab, beside the keys for the current step. After a sentence your app can't handle, it adds "Saved for review".
+
 ## Connecting to Fernfly
 
 | Prop | Use it for |
@@ -134,7 +136,15 @@ export async function POST(req: Request, ctx: { params: Promise<{ route: string 
 }
 ```
 
-Then pass `endpoint="/api/fernfly"`. When the model can't be reached, or the project hits its rate limit or daily quota, the bar says so in one line and search keeps working.
+Then pass `endpoint="/api/fernfly"`.
+
+When the bar can't answer a sentence, it says so in one line and search keeps working. "Ask" is styled as the pinned Ask item is:
+
+| When | The bar says |
+|---|---|
+| The project hits its rate limit | Ask is busy right now. Search still works. |
+| The project hits its daily quota | Ask has reached today's limit. Search still works. |
+| Fernfly can't be reached, or answers with an error | Ask isn't available right now. Search still works. |
 
 ## Tools
 
@@ -364,7 +374,7 @@ Any browser with constructable stylesheets: Chrome and Edge 79 and later, Firefo
 |---|---|
 | ⌘K or Ctrl+K | Opens or closes the bar |
 | Enter | Picks an item, asks the model from the "Ask" item, or runs the parsed call |
-| Tab, Shift+Tab | Moves through the input, the chips and the buttons |
+| Tab, Shift+Tab | Moves through the input, the chips, the buttons and the footer's Fernfly link |
 | Enter on a chip | Edits it |
 | Esc | Closes a chip's editor, leaves the confirm step, or closes the bar |
 

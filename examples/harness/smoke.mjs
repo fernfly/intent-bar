@@ -148,7 +148,7 @@ async function withPagePalette(browser, mode) {
 
   await h.openBar()
   await page.keyboard.type('pro')
-  await page.locator('.footer').click()
+  await page.locator('.footer-keys').click()
   const afterFooter = await h.active()
   await page.locator('[cmdk-group-heading]', { hasText: 'Pages' }).click()
   const afterHeading = await h.active()
@@ -188,7 +188,7 @@ async function withPagePalette(browser, mode) {
 
   await h.runnable()
   const order = []
-  for (let i = 0; i < 7; i++) {
+  for (let i = 0; i < 8; i++) {
     await page.keyboard.press('Tab')
     order.push(await h.active())
   }
@@ -197,8 +197,8 @@ async function withPagePalette(browser, mode) {
   const hostKeptFocus = await h.t(() => document.activeElement?.tagName === 'FERNFLY-INTENT-BAR')
   check(
     mode,
-    'Tab moves through the chips and buttons and wraps, never leaving the bar',
-    order.join(' ') === 'chip:tool chip:state chip:priority chip:assignee chip:add BUTTON input BUTTON' && hostKeptFocus,
+    'Tab moves through the chips, buttons and footer link and wraps, never leaving the bar',
+    order.join(' ') === 'chip:tool chip:state chip:priority chip:assignee chip:add BUTTON A input A' && hostKeptFocus,
     order.join(' '),
   )
 
@@ -396,18 +396,52 @@ async function withStates(browser, mode) {
   await h.openBar()
   await h.ask('slow down please now')
   await page.locator('.notice').waitFor()
+  if (mode === 'react') await page.screenshot({ path: join(out, 'propel-light-notice.png') })
   const notice = await h.t(() => window.t.text('.notice'))
   await page.keyboard.press('ControlOrMeta+a')
   await page.keyboard.type('proj')
   const found = await page.locator('[cmdk-item]').allTextContents()
-  check(mode, 'a rate limit leaves search working, with a one-line notice', notice === 'Too many requests right now. Search still works.' && found.join() === 'Projects', `${notice} | ${found.join(', ')}`)
+  check(mode, 'a rate limit leaves search working, with a one-line notice', notice === 'Ask is busy right now. Search still works.' && found.join() === 'Projects', `${notice} | ${found.join(', ')}`)
 
   await page.keyboard.press('ControlOrMeta+a')
   await h.ask('what is the weather today')
   await page.locator('.note', { hasText: 'not something' }).waitFor()
   const scope = await h.t(() => ({ note: window.t.text('.note'), footer: window.t.text('.footer') }))
-  check(mode, 'out of scope says so, in the app’s name', scope.note === 'That is not something Plane can do.' && scope.footer.startsWith('Saved for review'), scope.note)
+  check(mode, 'out of scope says so, in the app’s name', scope.note === 'That is not something Plane can do.' && scope.footer.startsWith('Powered by Fernfly · Saved for review'), `${scope.note} | ${scope.footer}`)
+  const link = await h.t(() => {
+    const a = window.t.q('.footer a')
+    return [a.getAttribute('href'), a.target, a.rel].join(' ')
+  })
+  check(mode, 'the footer links to Fernfly in a new tab', link === 'https://fernfly.com _blank noopener', link)
+
+  /** Whether the footer's two sides sit inside it, and the panel inside the viewport's 16px gutters. */
+  const footerFits = () =>
+    h.t(() => {
+      const footer = window.t.q('.footer')
+      const box = footer.getBoundingClientRect()
+      const panel = window.t.q('.panel').getBoundingClientRect()
+      const sides = [...footer.children].map((side) => side.getBoundingClientRect())
+      return (
+        sides.every((side) => side.left >= box.left && side.right <= box.right) &&
+        footer.scrollWidth <= footer.clientWidth &&
+        panel.left >= 16 &&
+        panel.right <= innerWidth - 16
+      )
+    })
+  await page.setViewportSize({ width: 375, height: 740 })
+  const phoneLight = await footerFits()
+  if (mode === 'react') await page.screenshot({ path: join(out, 'phone-light-out-of-scope.png') })
   await page.keyboard.press('Escape')
+  await h.t(() => window.setDark(true))
+  await h.openBar()
+  await h.ask('backlog items for priya')
+  await page.locator('.chips').waitFor()
+  const phoneDark = await footerFits()
+  if (mode === 'react') await page.screenshot({ path: join(out, 'phone-dark-chips.png') })
+  await page.keyboard.press('Escape')
+  await h.t(() => window.setDark(false))
+  await page.setViewportSize({ width: 1100, height: 760 })
+  check(mode, 'the footer fits at phone width, light and dark', phoneLight && phoneDark, `light=${phoneLight} dark=${phoneDark}`)
 
   await h.t(() => (document.getElementById('attached-search').value = 'proj'))
   await page.locator('#attached-search').click()
@@ -527,7 +561,7 @@ async function withScriptTag(browser) {
   await page.keyboard.type('slow down please now')
   await page.keyboard.press('Enter')
   await page.locator('.notice').waitFor()
-  check(mode, 'a 429 from the endpoint leaves search working, with a notice', (await t(() => window.t.text('.notice'))) === 'Too many requests right now. Search still works.')
+  check(mode, 'a 429 from the endpoint leaves search working, with a notice', (await t(() => window.t.text('.notice'))) === 'Ask is busy right now. Search still works.')
 
   const csp = await t(() => window.cspViolations)
   check(mode, 'no CSP violations, fetch included', csp.length === 0, csp.join('; '))

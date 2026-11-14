@@ -121,7 +121,7 @@ describe('01 empty and 02 short query', () => {
     const tries = within(bar().getByRole('group', { name: 'Try' }) as HTMLElement).getAllByRole('option')
     expect(tries.map((o) => o.textContent)).toEqual(['backlog for priya', 'move backlog to sam', 'my urgent bugs'])
     await user.keyboard('{Enter}')
-    await bar().findByRole('group', { name: 'Parsed request' })
+    await bar().findByRole('group', { name: 'Your request' })
     expect(transport.infer).toHaveBeenCalledTimes(1)
   })
 
@@ -130,9 +130,8 @@ describe('01 empty and 02 short query', () => {
     await user.keyboard('work')
     expect(bar().getAllByRole('option').map((o) => o.textContent)).toEqual(['Work items', 'Update work items'])
     await user.keyboard('{Enter}')
-    await bar().findByRole('group', { name: 'Parsed request' })
+    await bar().findByRole('group', { name: 'Your request' })
     expect(transport.infer).not.toHaveBeenCalled()
-    expect(shadow().querySelector('.footer')?.textContent).toContain('No model call')
   })
 
   it('goes to a page picked from search', async () => {
@@ -145,16 +144,24 @@ describe('01 empty and 02 short query', () => {
   it('keeps search working with a one-line notice when the model is rate limited', async () => {
     const { user, ask } = await setup({ 'projects for me please': { reason: 'rate_limited' } })
     await ask('projects for me please')
-    expect((await bar().findByRole('status')).textContent).toBe('Too many requests right now. Search still works.')
+    const notice = await bar().findByRole('status')
+    expect(notice.textContent).toBe('Ask is busy right now. Search still works.')
+    expect(notice.querySelector('.ask-key')?.textContent).toBe('Ask')
     await user.keyboard('{Control>}a{/Control}proj')
     expect(bar().getAllByRole('option').map((o) => o.textContent)).toEqual(['Projects'])
     expect(bar().queryByRole('status')).toBeNull()
   })
 
-  it('reads a network failure as the model being unavailable', async () => {
+  it('reads a network failure as Ask being unavailable', async () => {
     const { ask } = await setup({ 'any sentence here': new TypeError('Failed to fetch') })
     await ask('any sentence here')
-    expect((await bar().findByRole('status')).textContent).toMatch(/unavailable/)
+    expect((await bar().findByRole('status')).textContent).toBe("Ask isn't available right now. Search still works.")
+  })
+
+  it('says when the app has reached its daily limit', async () => {
+    const { ask } = await setup({ 'any sentence here': { reason: 'quota_exceeded' } })
+    await ask('any sentence here')
+    expect((await bar().findByRole('status')).textContent).toBe("Ask has reached today's limit. Search still works.")
   })
 })
 
@@ -167,7 +174,6 @@ describe('03 parsed', () => {
     await waitFor(() => expect(resultLine()).toBe('4 work items'))
     expect(chip('assignee').textContent).toBe('assigneePriya Shah')
     expect(chip('assignee').dataset.role).toBe('match')
-    expect(shadow().querySelector('.footer')?.textContent).toMatch(/Parsed in \d+ ms/)
     await user.keyboard('{Enter}')
     expect(tools.list_issues.run).toHaveBeenCalledWith(
       { state: 'backlog', assignee: 'u1' },
@@ -556,6 +562,91 @@ describe('07 results', () => {
     await new Promise((r) => setTimeout(r, 10))
     expect(isOpen()).toBe(true)
     expect(bar().queryByRole('listbox', { name: 'Results' })).toBeNull()
+  })
+})
+
+describe('08 footer and copy', () => {
+  /** The footer's two sides, as they read. */
+  const footer = () => [...(shadow().querySelector('.footer')?.children ?? [])].map((side) => side.textContent)
+  /** Everything the bar shows or reads out: its text, plus its labels and placeholders. */
+  const copy = () => {
+    const attributes = [...shadow().querySelectorAll('[aria-label], [placeholder], [title]')].flatMap((el) =>
+      ['aria-label', 'placeholder', 'title'].map((name) => el.getAttribute(name) ?? ''),
+    )
+    return [shadow().textContent, ...attributes].join(' ')
+  }
+  /** Checks the footer in one state, and that nothing in the bar names a model or a latency. */
+  const expectFooter = (keys: string, start = 'Powered by Fernfly') => {
+    expect(footer()).toEqual([start, keys])
+    expect(copy()).not.toMatch(/model|latency|\d\s*ms\b/i)
+  }
+
+  it('says Powered by Fernfly in every state, beside the keys for that state', async () => {
+    let answer!: (response: InferResponse) => void
+    const answers: Record<string, InferResponse | { reason: string }> = {
+      'move backlog to sam lee': parsed({ name: 'bulk_update', arguments: { state: 'backlog', set_assignee: 'sam lee' } }),
+      'what is the weather': { calls: [], out_of_scope: true, reply: 'x', log_ref: 'r' },
+      'any sentence here': { reason: 'unavailable' },
+    }
+    const transport = {
+      infer: vi.fn<Transport['infer']>(async ({ utterance }) => {
+        const known = answers[utterance]
+        if (!known) return new Promise((resolve) => (answer = resolve))
+        if ('reason' in known) throw known
+        return structuredClone(known)
+      }),
+    }
+    const { tools } = makeTools()
+    const run = vi.fn(async () => ({ items: [{ label: 'Fix login', href: '/items/1' }] }))
+    const { user, ask } = await setup({}, { transport, tools: { ...tools, list_issues: { ...tools.list_issues, run } } })
+    const askAgain = async (sentence: string) => {
+      await user.keyboard('{Control>}a{/Control}')
+      await ask(sentence)
+    }
+
+    expectFooter('Esc close')
+    await user.keyboard('cyc')
+    expectFooter('Esc close')
+
+    await askAgain('backlog for priya')
+    const live = shadow().querySelector('[aria-live="polite"]')
+    expect(live?.textContent).toBe('Working on it…')
+    expectFooter('Esc close')
+    answer(parsed({ name: 'list_issues', arguments: { state: 'backlog', assignee: 'priya' } }))
+    await bar().findByRole('group', { name: 'Your request' })
+    expect(live?.textContent).toBe('')
+    expectFooter('Tab chips, Esc close')
+
+    await waitFor(() => expect(primary().disabled).toBe(false))
+    await user.keyboard('{Enter}')
+    await bar().findByRole('listbox', { name: 'Results' })
+    expectFooter('↵ open, Esc close')
+
+    await askAgain('move backlog to sam lee')
+    await waitFor(() => expect(primary().disabled).toBe(false))
+    await user.keyboard('{Enter}')
+    expect(shadow().querySelector('.confirm-title')?.textContent).toBe('Assign 3 work items')
+    expectFooter('Esc back')
+    await user.keyboard('{Escape}')
+
+    await askAgain('what is the weather')
+    await bar().findByText('That is not something Acme can do.')
+    expectFooter('Esc close', 'Powered by Fernfly · Saved for review')
+
+    await askAgain('any sentence here')
+    await bar().findByRole('status')
+    expectFooter('Esc close')
+  })
+
+  it('links to Fernfly in a new tab, without taking focus from the input', async () => {
+    await setup()
+    const link = bar().getByRole('link', { name: 'Powered by Fernfly (opens in a new tab)' })
+    expect(link.getAttribute('href')).toBe('https://fernfly.com')
+    expect(link.getAttribute('target')).toBe('_blank')
+    expect(link.getAttribute('rel')).toBe('noopener')
+    const press = new MouseEvent('mousedown', { bubbles: true, cancelable: true, composed: true })
+    link.dispatchEvent(press)
+    expect(press.defaultPrevented).toBe(true)
   })
 })
 
