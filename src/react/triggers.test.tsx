@@ -95,7 +95,7 @@ describe('useIntentBar', () => {
     await act(async () => useIntentBar().close())
 
     await user.click([...document.querySelectorAll('button')][2]!)
-    await bar().findByRole('group', { name: 'Parsed request' })
+    await bar().findByRole('group', { name: 'Your request' })
     expect(t.infer).toHaveBeenCalledWith({ utterance: 'all my open work', meta: { source: 'intent-bar' } })
   })
 
@@ -144,7 +144,7 @@ describe('attach', () => {
     const enter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
     field.dispatchEvent(enter)
     expect(enter.defaultPrevented).toBe(true)
-    await bar().findByRole('group', { name: 'Parsed request' })
+    await bar().findByRole('group', { name: 'Your request' })
     expect(t.infer).toHaveBeenCalledWith({ utterance: 'backlog for priya', meta: { source: 'intent-bar' } })
   })
 })

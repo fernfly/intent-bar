@@ -46,7 +46,7 @@ interface ChipRowProps {
 export function ChipRow({ call, tool, resolutions, editor, chipRef, onOpen }: ChipRowProps) {
   const open = (target: EditorTarget) => () => onOpen(target)
   return (
-    <div className="chips" role="group" aria-label="Parsed request">
+    <div className="chips" role="group" aria-label="Your request">
       <button
         ref={chipRef(TOOL_CHIP)}
         type="button"

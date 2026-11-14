@@ -34,7 +34,7 @@ async function ask(options: Parameters<typeof import('./index').init>[0], senten
   const global = await import('./index')
   await act(async () => global.init(options))
   await act(async () => global.open({ query: sentence, ask: true }))
-  await bar().findByRole('group', { name: 'Parsed request' })
+  await bar().findByRole('group', { name: 'Your request' })
   return user
 }
 

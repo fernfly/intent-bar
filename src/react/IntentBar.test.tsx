@@ -48,7 +48,7 @@ async function openBar(extra: Partial<Parameters<typeof IntentBar>[0]> = {}) {
 async function parse(user: ReturnType<typeof userEvent.setup>) {
   await user.keyboard('backlog for priya')
   await user.keyboard('{Enter}')
-  await bar().findByRole('group', { name: 'Parsed request' })
+  await bar().findByRole('group', { name: 'Your request' })
 }
 
 afterEach(() => {
@@ -162,7 +162,7 @@ describe('IntentBar', () => {
     expect(options[0]?.getAttribute('aria-selected')).toBe('true')
     await user.keyboard('{Enter}')
     expect(transport.infer).toHaveBeenCalledWith({ utterance: 'backlog for priya', meta: { source: 'intent-bar' } })
-    await bar().findByRole('group', { name: 'Parsed request' })
+    await bar().findByRole('group', { name: 'Your request' })
   })
 
   it('cycles Tab through the input, chips, buttons and footer link, and wraps both ways', async () => {

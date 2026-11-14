@@ -138,13 +138,13 @@ export async function POST(req: Request, ctx: { params: Promise<{ route: string 
 
 Then pass `endpoint="/api/fernfly"`.
 
-When a sentence can't be answered, the bar says so in one line and search keeps working:
+When the bar can't answer a sentence, it says so in one line and search keeps working. "Ask" is styled as the pinned Ask item is:
 
 | When | The bar says |
 |---|---|
-| The project hits its rate limit | Too many requests right now. Search still works. |
-| The project hits its daily quota | This app has reached today's limit for sentences. Search still works. |
-| Fernfly can't be reached, or answers with an error | Sentences aren't available right now. Search still works. |
+| The project hits its rate limit | Ask is busy right now. Search still works. |
+| The project hits its daily quota | Ask has reached today's limit. Search still works. |
+| Fernfly can't be reached, or answers with an error | Ask isn't available right now. Search still works. |
 
 ## Tools
 

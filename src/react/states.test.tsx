@@ -121,7 +121,7 @@ describe('01 empty and 02 short query', () => {
     const tries = within(bar().getByRole('group', { name: 'Try' }) as HTMLElement).getAllByRole('option')
     expect(tries.map((o) => o.textContent)).toEqual(['backlog for priya', 'move backlog to sam', 'my urgent bugs'])
     await user.keyboard('{Enter}')
-    await bar().findByRole('group', { name: 'Parsed request' })
+    await bar().findByRole('group', { name: 'Your request' })
     expect(transport.infer).toHaveBeenCalledTimes(1)
   })
 
@@ -130,7 +130,7 @@ describe('01 empty and 02 short query', () => {
     await user.keyboard('work')
     expect(bar().getAllByRole('option').map((o) => o.textContent)).toEqual(['Work items', 'Update work items'])
     await user.keyboard('{Enter}')
-    await bar().findByRole('group', { name: 'Parsed request' })
+    await bar().findByRole('group', { name: 'Your request' })
     expect(transport.infer).not.toHaveBeenCalled()
   })
 
@@ -144,22 +144,24 @@ describe('01 empty and 02 short query', () => {
   it('keeps search working with a one-line notice when the model is rate limited', async () => {
     const { user, ask } = await setup({ 'projects for me please': { reason: 'rate_limited' } })
     await ask('projects for me please')
-    expect((await bar().findByRole('status')).textContent).toBe('Too many requests right now. Search still works.')
+    const notice = await bar().findByRole('status')
+    expect(notice.textContent).toBe('Ask is busy right now. Search still works.')
+    expect(notice.querySelector('.ask-key')?.textContent).toBe('Ask')
     await user.keyboard('{Control>}a{/Control}proj')
     expect(bar().getAllByRole('option').map((o) => o.textContent)).toEqual(['Projects'])
     expect(bar().queryByRole('status')).toBeNull()
   })
 
-  it('reads a network failure as sentences being unavailable', async () => {
+  it('reads a network failure as Ask being unavailable', async () => {
     const { ask } = await setup({ 'any sentence here': new TypeError('Failed to fetch') })
     await ask('any sentence here')
-    expect((await bar().findByRole('status')).textContent).toBe("Sentences aren't available right now. Search still works.")
+    expect((await bar().findByRole('status')).textContent).toBe("Ask isn't available right now. Search still works.")
   })
 
   it('says when the app has reached its daily limit', async () => {
     const { ask } = await setup({ 'any sentence here': { reason: 'quota_exceeded' } })
     await ask('any sentence here')
-    expect((await bar().findByRole('status')).textContent).toBe("This app has reached today's limit for sentences. Search still works.")
+    expect((await bar().findByRole('status')).textContent).toBe("Ask has reached today's limit. Search still works.")
   })
 })
 
@@ -611,7 +613,7 @@ describe('08 footer and copy', () => {
     expect(live?.textContent).toBe('Working on it…')
     expectFooter('Esc close')
     answer(parsed({ name: 'list_issues', arguments: { state: 'backlog', assignee: 'priya' } }))
-    await bar().findByRole('group', { name: 'Parsed request' })
+    await bar().findByRole('group', { name: 'Your request' })
     expect(live?.textContent).toBe('')
     expectFooter('Tab chips, Esc close')
 

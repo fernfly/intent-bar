@@ -42,11 +42,15 @@ const ASK = '\u0000ask'
 /** The main list's filter: the Ask item always scores highest, so it stays pinned first. */
 const filter = (value: string, search: string, keywords?: string[]) => (value === ASK ? 1 : labelFilter(value, search, keywords))
 
-/** What a failed sentence tells the person typing: what they can still do, never how the bar works. */
+/**
+ * What a failed Ask tells the person typing, after the word "Ask", which is
+ * styled as the pinned Ask item is so it reads as the feature's name. It says
+ * what they can still do, never how the bar works.
+ */
 const NOTICES: Record<FailureReason, string> = {
-  rate_limited: 'Too many requests right now. Search still works.',
-  quota_exceeded: "This app has reached today's limit for sentences. Search still works.",
-  unavailable: "Sentences aren't available right now. Search still works.",
+  rate_limited: 'is busy right now.',
+  quota_exceeded: "has reached today's limit.",
+  unavailable: "isn't available right now.",
 }
 
 const FERNFLY_URL = 'https://fernfly.com'
@@ -118,7 +122,7 @@ export function Overlay(props: OverlayProps) {
   const context = useHostContext(getContext)
   const [search, setSearch] = useState(request?.query ?? '')
   const [phase, setPhase] = useState<Phase>('search')
-  const [notice, setNotice] = useState<string | null>(null)
+  const [notice, setNotice] = useState<FailureReason | null>(null)
   const [asked, setAsked] = useState('')
   const [draft, setDraft] = useState<Draft | null>(null)
   const [editor, setEditor] = useState<EditorTarget | null>(null)
@@ -223,7 +227,7 @@ export function Overlay(props: OverlayProps) {
       setPhase('parsed')
     } catch (err) {
       if (id !== requestId.current) return
-      setNotice(NOTICES[failureReason(err)])
+      setNotice(failureReason(err))
       setPhase('search')
     }
   }
@@ -449,7 +453,7 @@ export function Overlay(props: OverlayProps) {
           />
           {phase === 'search' && notice && (
             <p className="notice" role="status">
-              {notice}
+              <span className="ask-key">Ask</span> {NOTICES[notice]} Search still works.
             </p>
           )}
           {phase === 'search' && (

@@ -396,11 +396,12 @@ async function withStates(browser, mode) {
   await h.openBar()
   await h.ask('slow down please now')
   await page.locator('.notice').waitFor()
+  if (mode === 'react') await page.screenshot({ path: join(out, 'propel-light-notice.png') })
   const notice = await h.t(() => window.t.text('.notice'))
   await page.keyboard.press('ControlOrMeta+a')
   await page.keyboard.type('proj')
   const found = await page.locator('[cmdk-item]').allTextContents()
-  check(mode, 'a rate limit leaves search working, with a one-line notice', notice === 'Too many requests right now. Search still works.' && found.join() === 'Projects', `${notice} | ${found.join(', ')}`)
+  check(mode, 'a rate limit leaves search working, with a one-line notice', notice === 'Ask is busy right now. Search still works.' && found.join() === 'Projects', `${notice} | ${found.join(', ')}`)
 
   await page.keyboard.press('ControlOrMeta+a')
   await h.ask('what is the weather today')
@@ -560,7 +561,7 @@ async function withScriptTag(browser) {
   await page.keyboard.type('slow down please now')
   await page.keyboard.press('Enter')
   await page.locator('.notice').waitFor()
-  check(mode, 'a 429 from the endpoint leaves search working, with a notice', (await t(() => window.t.text('.notice'))) === 'Too many requests right now. Search still works.')
+  check(mode, 'a 429 from the endpoint leaves search working, with a notice', (await t(() => window.t.text('.notice'))) === 'Ask is busy right now. Search still works.')
 
   const csp = await t(() => window.cspViolations)
   check(mode, 'no CSP violations, fetch included', csp.length === 0, csp.join('; '))
