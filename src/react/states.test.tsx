@@ -1,6 +1,6 @@
-import { cleanup, render, waitFor, within } from '@testing-library/react'
+import { act, cleanup, render, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Call, HostContext, InferResponse, LookupContext, LookupOption, ToolConfig, Transport } from '../core/types'
 import { IntentBar, type IntentBarProps } from './IntentBar'
 
@@ -647,6 +647,204 @@ describe('08 footer and copy', () => {
     const press = new MouseEvent('mousedown', { bubbles: true, cancelable: true, composed: true })
     link.dispatchEvent(press)
     expect(press.defaultPrevented).toBe(true)
+  })
+})
+
+describe('09 auto-run', () => {
+  type User = ReturnType<typeof userEvent.setup>
+  const pages = { label: 'page', enum: ['pricing', 'docs'], optionLabels: { pricing: 'Pricing', docs: 'Docs' } }
+
+  /** The shared tools, plus a navigation to a page and one to a person's profile, which a lookup finds. */
+  function navigation(config: Partial<ToolConfig> = {}) {
+    const { tools } = makeTools()
+    return {
+      ...tools,
+      open_page: { kind: 'navigate', label: 'Pages', args: { page: pages }, run: vi.fn(), ...config },
+      open_profile: { kind: 'navigate', label: 'Profile', args: { person: { label: 'person', entity: 'member' } }, run: vi.fn() },
+    } satisfies Record<string, ToolConfig>
+  }
+
+  const live = () => shadow().querySelector('[aria-live="polite"]')?.textContent
+  const keys = () => shadow().querySelector('.footer-keys')?.textContent
+  /** Moves the clock on, and lets the bar render what that does. */
+  const wait = (ms: number) => act(() => vi.advanceTimersByTimeAsync(ms))
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'], shouldAdvanceTime: true })
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  /** Asks for the pricing page, with the navigation's config, and waits for its chips. */
+  async function askPricing(config: Partial<ToolConfig> = {}) {
+    const tools = navigation(config)
+    const bar = await setup({ 'open the pricing page': parsed({ name: 'open_page', arguments: { page: 'pricing' } }) }, { tools })
+    await bar.ask('open the pricing page')
+    await waitFor(() => expect(chip('page').textContent).toBe('pagePricing'))
+    return { ...bar, tools }
+  }
+
+  it('runs a resolved navigation after its countdown, announced once, and sends no correction', async () => {
+    const { tools, transport } = await askPricing()
+    expect(primary().textContent).toBe('Go in 3… ↵')
+    expect(primary().hasAttribute('data-countdown')).toBe(true)
+    expect(live()).toBe('Opening Pricing in 3 seconds. Press Escape to stop.')
+    expect(keys()).toBe('Tab chips, Esc stop')
+    const announcement = shadow().querySelector('[aria-live] .sr-only')
+    await wait(1000)
+    expect(primary().textContent).toBe('Go in 2… ↵')
+    await wait(1000)
+    expect(primary().textContent).toBe('Go in 1… ↵')
+    expect(shadow().querySelector('[aria-live] .sr-only')).toBe(announcement)
+    expect(live()).toBe('Opening Pricing in 3 seconds. Press Escape to stop.')
+    expect(tools.open_page.run).not.toHaveBeenCalled()
+    await wait(1000)
+    await waitFor(() =>
+      expect(tools.open_page.run).toHaveBeenCalledWith({ page: 'pricing' }, expect.objectContaining({ utterance: 'open the pricing page' })),
+    )
+    expect(isOpen()).toBe(false)
+    expect(transport.correct).not.toHaveBeenCalled()
+  })
+
+  it('names a destination a lookup found, once it resolves', async () => {
+    const tools = navigation()
+    const { ask } = await setup({ 'open the profile for priya': parsed({ name: 'open_profile', arguments: { person: 'priya' } }) }, { tools })
+    await ask('open the profile for priya')
+    await waitFor(() => expect(primary().textContent).toBe('Go in 3… ↵'))
+    expect(live()).toBe('Opening Priya Shah in 3 seconds. Press Escape to stop.')
+  })
+
+  it('never starts while a chip asks to choose or has no match, nor after the person picks', async () => {
+    const tools = navigation()
+    const { user, ask } = await setup(
+      {
+        'open the profile for sam': parsed({ name: 'open_profile', arguments: { person: 'sam' } }),
+        'open the profile for zed': parsed({ name: 'open_profile', arguments: { person: 'zed' } }),
+      },
+      { tools },
+    )
+    await ask('open the profile for zed')
+    await waitFor(() => expect(chip('person').dataset.status).toBe('missing'))
+    await wait(5000)
+    expect(primary().textContent).toBe('Go ↵')
+
+    await user.keyboard('{Control>}a{/Control}')
+    await ask('open the profile for sam')
+    await waitFor(() => expect(chip('person').dataset.status).toBe('choose'))
+    await wait(5000)
+    expect(primary().textContent).toBe('Go ↵')
+    await user.click(chip('person'))
+    await bar().findByRole('option', { name: /Sam Lee/ })
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(primary().disabled).toBe(false))
+    await wait(5000)
+    expect(primary().textContent).toBe('Go ↵')
+    expect(tools.open_profile.run).not.toHaveBeenCalled()
+  })
+
+  it('never starts for a tool started from search, which has no model answer', async () => {
+    const tools = navigation()
+    const { user, transport } = await setup({}, { tools })
+    await user.keyboard('pages{Enter}')
+    await bar().findByRole('group', { name: 'Your request' })
+    await wait(5000)
+    expect(primary().textContent).toBe('Go ↵')
+    expect(tools.open_page.run).not.toHaveBeenCalled()
+    expect(transport.infer).not.toHaveBeenCalled()
+  })
+
+  it.each<[string, (user: User) => Promise<void>]>([
+    ['typing', (user) => user.keyboard('s')],
+    ['Tab to a chip', (user) => user.keyboard('{Tab}')],
+    ['opening a chip’s editor', (user) => user.click(chip('page'))],
+    ['a key that does nothing else', (user) => user.keyboard('{Shift}')],
+    ['a click in the panel', (user) => user.click(shadow().querySelector('.result-line')!)],
+  ])('stops the countdown on %s', async (_, interact) => {
+    const { user, tools } = await askPricing()
+    await interact(user)
+    expect(shadow().querySelector('[data-countdown]')).toBeNull()
+    expect(live()).toBe('')
+    await wait(5000)
+    expect(tools.open_page.run).not.toHaveBeenCalled()
+    expect(isOpen()).toBe(true)
+  })
+
+  it('stops on Escape without closing, and Enter then runs it', async () => {
+    const { user, tools, transport } = await askPricing()
+    await user.keyboard('{Escape}')
+    expect(isOpen()).toBe(true)
+    expect(primary().textContent).toBe('Go ↵')
+    expect(keys()).toBe('Tab chips, Esc close')
+    await wait(5000)
+    expect(tools.open_page.run).not.toHaveBeenCalled()
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(tools.open_page.run).toHaveBeenCalledTimes(1))
+    expect(isOpen()).toBe(false)
+    expect(transport.correct).not.toHaveBeenCalled()
+  })
+
+  it('closes on a second Escape', async () => {
+    const { user } = await askPricing()
+    await user.keyboard('{Escape}{Escape}')
+    expect(isOpen()).toBe(false)
+  })
+
+  it('runs at once on Enter during the countdown, and only once', async () => {
+    const { user, tools } = await askPricing()
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(tools.open_page.run).toHaveBeenCalledTimes(1))
+    expect(isOpen()).toBe(false)
+    await wait(5000)
+    expect(tools.open_page.run).toHaveBeenCalledTimes(1)
+  })
+
+  it('waits for Enter when the navigation sets autoRun: false', async () => {
+    const { tools } = await askPricing({ autoRun: false })
+    expect(primary().textContent).toBe('Go ↵')
+    expect(live()).toBe('')
+    await wait(5000)
+    expect(tools.open_page.run).not.toHaveBeenCalled()
+  })
+
+  it('honours a navigation’s own seconds', async () => {
+    const { tools } = await askPricing({ autoRun: 5 })
+    expect(primary().textContent).toBe('Go in 5… ↵')
+    expect(live()).toBe('Opening Pricing in 5 seconds. Press Escape to stop.')
+    await wait(4000)
+    expect(tools.open_page.run).not.toHaveBeenCalled()
+    await wait(1000)
+    await waitFor(() => expect(tools.open_page.run).toHaveBeenCalledTimes(1))
+  })
+
+  it('counts a filter down only when its config gives seconds, and never an action', async () => {
+    const { tools } = makeTools()
+    const answers = {
+      'backlog for priya': parsed({ name: 'list_issues', arguments: { state: 'backlog', assignee: 'priya' } }),
+      'move backlog to sam lee': parsed({ name: 'bulk_update', arguments: { state: 'backlog', set_assignee: 'sam lee' } }),
+    }
+    const plain = await setup(answers)
+    await plain.ask('backlog for priya')
+    await waitFor(() => expect(resultLine()).toBe('4 work items'))
+    await wait(5000)
+    expect(primary().textContent).toBe('Apply filter ↵')
+    cleanup()
+
+    const timed = { ...tools, list_issues: { ...tools.list_issues, autoRun: 1 }, bulk_update: { ...tools.bulk_update, autoRun: 1 } }
+    const { user, ask } = await setup(answers, { tools: timed })
+    await ask('backlog for priya')
+    await waitFor(() => expect(primary().textContent).toBe('Apply filter in 1… ↵'))
+    expect(live()).toBe('Showing 4 work items in 1 second. Press Escape to stop.')
+    await wait(1000)
+    await waitFor(() => expect(timed.list_issues.run).toHaveBeenCalledTimes(1))
+
+    await user.keyboard('{Control>}k{/Control}')
+    await ask('move backlog to sam lee')
+    await waitFor(() => expect(primary().disabled).toBe(false))
+    await wait(5000)
+    expect(primary().textContent).toBe('Assign 3… ↵')
+    expect(shadow().querySelector('.confirm')).toBeNull()
+    expect(timed.bulk_update.run).not.toHaveBeenCalled()
   })
 })
 

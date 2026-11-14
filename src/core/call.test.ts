@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  autoRunSeconds,
   coerce,
   examplesFrom,
   isCorrection,
@@ -36,6 +37,31 @@ describe('kindOf and needsConfirm', () => {
     expect(needsConfirm({ confirm: false }, { count: 2 })).toBe(true)
     expect(needsConfirm({ confirm: false }, {})).toBe(true)
     expect(needsConfirm({ confirm: false }, undefined)).toBe(true)
+  })
+})
+
+describe('autoRunSeconds', () => {
+  it('counts a navigation down 3 seconds, and waits for Enter on anything else', () => {
+    expect(autoRunSeconds({ kind: 'navigate' })).toBe(3)
+    expect(autoRunSeconds({ kind: 'filter' })).toBe(false)
+    expect(autoRunSeconds({})).toBe(false)
+    expect(autoRunSeconds(undefined)).toBe(false)
+  })
+
+  it('takes the tool’s own seconds, but never runs an action by itself', () => {
+    expect(autoRunSeconds({ kind: 'navigate', autoRun: 5 })).toBe(5)
+    expect(autoRunSeconds({ kind: 'navigate', autoRun: false })).toBe(false)
+    expect(autoRunSeconds({ kind: 'filter', autoRun: 2 })).toBe(2)
+    expect(autoRunSeconds({ kind: 'action', autoRun: 2 })).toBe(false)
+    expect(autoRunSeconds({ autoRun: 2 })).toBe(false)
+  })
+
+  it('rounds up to whole seconds, at least 1, and ignores a number that isn’t one', () => {
+    expect(autoRunSeconds({ kind: 'navigate', autoRun: 1.2 })).toBe(2)
+    expect(autoRunSeconds({ kind: 'navigate', autoRun: 0 })).toBe(1)
+    expect(autoRunSeconds({ kind: 'navigate', autoRun: -1 })).toBe(false)
+    expect(autoRunSeconds({ kind: 'navigate', autoRun: Number.NaN })).toBe(false)
+    expect(autoRunSeconds({ kind: 'navigate', autoRun: Number.POSITIVE_INFINITY })).toBe(false)
   })
 })
 

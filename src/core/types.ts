@@ -148,6 +148,14 @@ export interface ToolConfig {
   args?: Readonly<Record<string, ArgConfig>>
   /** `false` skips confirm for an action, but only when the preview count is 1 or less. */
   confirm?: boolean
+  /**
+   * Seconds before the model's call runs by itself once every chip has
+   * resolved, counted down on the run button, or `false` to wait for Enter.
+   * Defaults to 3 for `navigate` and `false` otherwise. A filter counts down
+   * only when given a number, and an action never runs by itself. Any key or
+   * click stops the countdown. Rounded up to whole seconds, at least 1.
+   */
+  autoRun?: number | false
   /** What the call would touch. Returning nothing means no preview. */
   preview?(args: ResolvedArgs, ctx: HandlerContext): Preview | undefined | Promise<Preview | undefined>
   run?(args: ResolvedArgs, ctx: RunContext): RunResult | void | Promise<RunResult | void>
