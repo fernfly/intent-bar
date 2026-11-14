@@ -22,6 +22,23 @@ export function needsConfirm(tool: ToolConfig | undefined, preview: Preview | un
   return !(tool?.confirm === false && singleItem)
 }
 
+/** How long a navigation counts down before it runs by itself, unless its config says otherwise. */
+export const AUTO_RUN_SECONDS = 3
+
+/**
+ * Whole seconds before the model's call runs by itself, or false when it waits
+ * for Enter. A navigation counts down `AUTO_RUN_SECONDS` unless its config
+ * says otherwise, a filter only when its config gives a number, and an action
+ * never, since it confirms.
+ */
+export function autoRunSeconds(tool: ToolConfig | undefined): number | false {
+  const kind = kindOf(tool)
+  if (kind === 'action') return false
+  const seconds = tool?.autoRun ?? (kind === 'navigate' ? AUTO_RUN_SECONDS : false)
+  if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds < 0) return false
+  return Math.max(1, Math.ceil(seconds))
+}
+
 /** The call with one argument set. */
 export function setArg(call: Call, name: string, value: unknown): Call {
   return { name: call.name, arguments: { ...call.arguments, [name]: value } }

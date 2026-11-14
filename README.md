@@ -106,10 +106,10 @@ FernflyIntentBar.init({ project: 'YOUR_PUBLIC_ID', appName: 'Acme', tools: { lis
 
 1. **Search.** Short queries search your pages and tool names on every keystroke, with no model call. From three words, or when nothing matches, an "Ask" item is pinned first, and Enter sends the sentence to the model.
 2. **Chips.** The model's call shows as chips: the tool, then one chip per argument. Lookups turn the user's words into your app's values, and the tool's `preview` counts what the call would touch.
-3. **Run.** A filter or a navigation runs on Enter. Anything else confirms first, with the preview's summary and sample rows, then runs with progress, and with Undo when your run returns one. A filter your own list can't show can hand its matching rows back for the bar to list.
+3. **Run.** A filter runs on Enter. A navigation the model answered runs by itself after a countdown on its Go button ("Go in 3…"), once every chip has resolved. Any key or click stops the countdown, Escape included, and Enter runs it at once. Anything else confirms first, with the preview's summary and sample rows, then runs with progress, and with Undo when your run returns one. A filter your own list can't show can hand its matching rows back for the bar to list.
 4. **Correct.** Tab moves through the chips and Enter opens one, to change its value or remove it. "+ add" adds an argument the model missed, and the tool chip switches tools. Running an edited call sends it to Fernfly as a correction.
 
-The bar's own words are written for the person typing, so they never mention the model or how long it took. While a sentence is being answered, the bar shows "Working on it…", which screen readers announce. The footer reads "Powered by Fernfly", linking to fernfly.com in a new tab, beside the keys for the current step. After a sentence your app can't handle, it adds "Saved for review".
+The bar's own words are written for the person typing, so they never mention the model or how long it took. While a sentence is being answered, the bar shows "Working on it…", which screen readers announce. A countdown is announced once, such as "Opening Pricing in 3 seconds. Press Escape to stop.", and with reduced motion it shows as text only. The footer reads "Powered by Fernfly", linking to fernfly.com in a new tab, beside the keys for the current step. After a sentence your app can't handle, it adds "Saved for review".
 
 ## Connecting to Fernfly
 
@@ -174,13 +174,14 @@ tools={{
 
 | Field | What it does |
 |---|---|
-| `kind` | `'filter'` and `'navigate'` run on Enter. `'action'`, the default, confirms first, so a tool with no kind confirms. |
+| `kind` | `'filter'` runs on Enter. `'navigate'` runs on Enter too, or by itself after a countdown: see `autoRun`. `'action'`, the default, confirms first, so a tool with no kind confirms. |
 | `label` | The tool chip's text, and the name instant search finds. A tool with no label isn't in search. |
 | `examples` | Sentences shown on the empty bar, up to three across all tools. |
 | `args` | How each argument reads and is edited. See below. |
 | `preview(args, ctx)` | What the call would touch. It runs whenever the chips change and every value has resolved, and may return nothing. |
 | `run(args, ctx)` | Runs the call, and may return `{ message, undo }`. A filter's run may also return `items`, the rows for the bar to list. See [A filter's rows](#a-filters-rows). |
 | `confirm` | `false` skips the confirm step for an action, but only when the preview counts one item or fewer. Bulk work always confirms. |
+| `autoRun` | Seconds before the model's call runs by itself, counted down on its button once every chip has resolved, or `false` to wait for Enter. Defaults to `3` for `'navigate'` and `false` otherwise. A filter counts down only when you give it a number, and an action never runs by itself. Whole seconds, at least 1. |
 
 `args` holds the resolved arguments: an entity argument holds the matched value's `id`, or `null` for `none`. `ctx` holds `raw` (the arguments in the user's words, before lookups), `call`, `utterance` and `context`. In `run`, `ctx.progress(done, total)` shows progress while a long run goes.
 
@@ -202,7 +203,7 @@ A call to a tool that `tools` doesn't list, or that has no `run`, can't run, and
 | Field | What it does |
 |---|---|
 | `count` | How many items the call touches. |
-| `summary` | One line, such as "Assign 12 work items to Priya", shown under the chips and as the confirm step's title. |
+| `summary` | One line, such as "Assign 12 work items to Priya", shown under the chips and as the confirm step's title. A countdown's announcement names it as the destination, and without one it reads the chips' values. |
 | `sample` | A few rows of what the call touches, shown when confirming. |
 | `undoable` | Adds "You can undo this afterwards." to the confirm step. |
 | `confirmLabel` | The run button's label. Defaults to "Run". |
@@ -271,7 +272,7 @@ When a user changes a chip and then runs the call, the bar sends the edited call
 |---|---|
 | A changed value | A pick between two matches for the same words |
 | An added or removed argument | An edit the user abandons |
-| A switched tool | A call run as the model returned it |
+| A switched tool | A call run as the model returned it, including one that ran by itself |
 | | A preview action, such as "Email all 51" |
 
 A correction is sent only after the run succeeds.
@@ -373,10 +374,10 @@ Any browser with constructable stylesheets: Chrome and Edge 79 and later, Firefo
 | Key | What it does |
 |---|---|
 | ⌘K or Ctrl+K | Opens or closes the bar |
-| Enter | Picks an item, asks the model from the "Ask" item, or runs the parsed call |
+| Enter | Picks an item, asks the model from the "Ask" item, or runs the parsed call, at once during a countdown |
 | Tab, Shift+Tab | Moves through the input, the chips, the buttons and the footer's Fernfly link |
 | Enter on a chip | Edits it |
-| Esc | Closes a chip's editor, leaves the confirm step, or closes the bar |
+| Esc | Stops a countdown, closes a chip's editor, leaves the confirm step, or closes the bar |
 
 ## Development
 

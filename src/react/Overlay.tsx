@@ -4,13 +4,14 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type SyntheticEvent,
 } from 'react'
 import { flushSync } from 'react-dom'
 import { CommandGroup, CommandInput, CommandItem, CommandList, CommandRoot } from 'cmdk'
-import { examplesFrom, isCorrection, kindOf, needsConfirm, removeArg, setArg, switchTool, valueLabel } from '../core/call'
+import { autoRunSeconds, examplesFrom, isCorrection, kindOf, needsConfirm, removeArg, setArg, switchTool, valueLabel } from '../core/call'
 import { hasModifier, isComposing, matchesHotkey, type Hotkey } from '../core/hotkey'
 import { readsWithout, type Pick, type Reads } from '../core/lookup'
 import { cycleFocus, deepActiveElement, isFocusable, lockScroll, returnFocus } from '../core/overlay'
@@ -29,6 +30,7 @@ import type {
   ResultItem,
   RunResult,
   ToolConfig,
+  ToolKind,
   Transport,
   ValueResolver,
 } from '../core/types'
@@ -78,6 +80,21 @@ interface Draft {
   model?: Call
   call: Call
   picks: Readonly<Record<string, Pick>>
+}
+
+/** A countdown to running the model's call by itself, for the draft it started on. */
+interface Countdown {
+  draft: Draft
+  /** Whole seconds, from the start. */
+  total: number
+  /** Fixed as the countdown starts, so screen readers hear it once. */
+  announcement: string
+}
+
+/** What a countdown announces as it starts: where the call goes, when, and how to stop it. */
+function countdownAnnouncement(kind: ToolKind, name: string, seconds: number): string {
+  const verb = kind === 'navigate' ? 'Opening' : 'Showing'
+  return `${verb} ${name} in ${seconds} second${seconds === 1 ? '' : 's'}. Press Escape to stop.`
 }
 
 export interface OverlayProps {
@@ -130,6 +147,10 @@ export function Overlay(props: OverlayProps) {
   const [applying, setApplying] = useState<Draft | null>(null)
   const [results, setResults] = useState<readonly ResultItem[]>([])
   const [selected, setSelected] = useState('')
+  const [countdown, setCountdown] = useState<Countdown | null>(null)
+  const [secondsLeft, setSecondsLeft] = useState(0)
+  /** The model answer whose auto-run has started or been ruled out. It outlives the drafts that picks and edits make from it. */
+  const autoRunDone = useRef<Call | null>(null)
   const latestDraft = useRef(draft)
   latestDraft.current = draft
   const live = useRef(true)
@@ -359,13 +380,69 @@ export function Overlay(props: OverlayProps) {
     if (needsConfirm(tool, ready)) toConfirm(null)
     else execute(null)
   }
+  const primaryRef = useRef(primary)
+  primaryRef.current = primary
+
+  /** Rules out auto-run for the answer on screen, as the person has started working with it, and stops a countdown. */
+  const stopAutoRun = () => {
+    autoRunDone.current = latestDraft.current?.model ?? null
+    setCountdown(null)
+  }
+
+  const autoRun = autoRunSeconds(tool)
+  // Only the model's own call, unedited, with every chip resolved and its preview settled, so the announcement can name it.
+  const canAutoRun =
+    autoRun !== false &&
+    phase === 'parsed' &&
+    !!draft?.model &&
+    draft.call === draft.model &&
+    !editor &&
+    !blocker &&
+    (preview.status === 'idle' || preview.status === 'ready')
+  const counting = countdown && countdown.draft === draft && phase === 'parsed' && !editor && !blocker ? countdown : null
+
+  useEffect(() => {
+    if (!canAutoRun || !draft?.model || autoRunDone.current === draft.model) return
+    autoRunDone.current = draft.model
+    const labels = entries.flatMap(([, r]) => (r.status === 'resolved' ? [r.label] : []))
+    const name = ready?.summary ?? (labels.length > 0 ? labels.join(', ') : (tool?.label ?? draft.call.name))
+    setCountdown({ draft, total: autoRun, announcement: countdownAnnouncement(kind, name, autoRun) })
+    setSecondsLeft(autoRun)
+  })
+
+  // One timeout runs the call when the countdown ends. The interval only redraws the seconds left.
+  useEffect(() => {
+    if (!countdown) return
+    if (!counting) {
+      setCountdown(null)
+      return
+    }
+    const run = setTimeout(() => {
+      setCountdown(null)
+      primaryRef.current()
+    }, countdown.total * 1000)
+    const tick = setInterval(() => setSecondsLeft((left) => Math.max(1, left - 1)), 1000)
+    return () => {
+      clearTimeout(run)
+      clearInterval(tick)
+    }
+  }, [countdown, counting])
 
   const onKeyDownCapture = (e: ReactKeyboardEvent) => {
-    if (!hotkey || !hasModifier(hotkey) || isComposing(e.nativeEvent)) return
-    if (!matchesHotkey(e.nativeEvent, hotkey)) return
-    e.preventDefault()
-    e.stopPropagation()
-    onClose()
+    const composing = isComposing(e.nativeEvent)
+    if (hotkey && hasModifier(hotkey) && !composing && matchesHotkey(e.nativeEvent, hotkey)) {
+      e.preventDefault()
+      e.stopPropagation()
+      onClose()
+      return
+    }
+    // Enter in the input runs the call, at once during a countdown. Any other key stops it.
+    if (e.key === 'Enter' && !composing && e.target === inputRef.current) return
+    if (counting && e.key === 'Escape' && !composing) {
+      e.preventDefault()
+      e.stopPropagation()
+    }
+    stopAutoRun()
   }
 
   const onKeyDown = (e: ReactKeyboardEvent) => {
@@ -387,6 +464,7 @@ export function Overlay(props: OverlayProps) {
   }
 
   const onMouseDown = (e: ReactMouseEvent) => {
+    stopAutoRun()
     if (!isFocusable(e.target)) e.preventDefault()
   }
 
@@ -506,7 +584,10 @@ export function Overlay(props: OverlayProps) {
         </CommandRoot>
 
         {/* Always mounted, so screen readers are already watching it when the line appears. */}
-        <div aria-live="polite">{phase === 'loading' && <p className="note">Working on it…</p>}</div>
+        <div aria-live="polite">
+          {phase === 'loading' && <p className="note">Working on it…</p>}
+          {counting && <span className="sr-only">{counting.announcement}</span>}
+        </div>
 
         {phase === 'parsed' && draft && (
           <>
@@ -550,8 +631,15 @@ export function Overlay(props: OverlayProps) {
                     {a.label}
                   </button>
                 ))}
-                <button type="button" className="primary" disabled={!!blocker} onClick={primary}>
-                  {primaryLabel} <kbd>↵</kbd>
+                <button
+                  type="button"
+                  className="primary"
+                  disabled={!!blocker}
+                  onClick={primary}
+                  data-countdown={counting ? '' : undefined}
+                  style={counting ? ({ '--fb-countdown': `${counting.total}s` } as CSSProperties) : undefined}
+                >
+                  {counting ? `${primaryLabel} in ${secondsLeft}…` : primaryLabel} <kbd>↵</kbd>
                 </button>
               </div>
             </div>
@@ -617,7 +705,7 @@ export function Overlay(props: OverlayProps) {
                 <kbd>↵</kbd> open,{' '}
               </>
             )}
-            <kbd>Esc</kbd> {phase === 'confirm' ? 'back' : 'close'}
+            <kbd>Esc</kbd> {phase === 'confirm' ? 'back' : counting ? 'stop' : 'close'}
           </span>
         </footer>
       </div>

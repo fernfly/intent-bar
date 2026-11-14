@@ -107,6 +107,80 @@ async function openPage(browser, mode, query = '') {
   }
 }
 
+/** A navigation the model answers counts down, then runs by itself, unless a key stops it. */
+async function withAutoRun(browser, mode) {
+  const h = await openPage(browser, mode, '&palette=off')
+  const { page } = h
+  /** The run button, the live region and the footer's keys, as they stand. */
+  const state = () =>
+    h.t(() => {
+      const button = window.t.q('button.primary')
+      const style = button && getComputedStyle(button)
+      return {
+        open: window.t.isOpen(),
+        text: button?.textContent,
+        animation: style?.animationName,
+        image: style?.backgroundImage,
+        live: window.t.text('[aria-live="polite"]'),
+        keys: window.t.text('.footer-keys'),
+      }
+    })
+
+  await h.openBar()
+  const started = Date.now()
+  await h.ask('open the settings page')
+  await page.locator('button.primary[data-countdown]').waitFor()
+  const counting = await state()
+  if (mode === 'react') await page.screenshot({ path: join(out, 'propel-light-countdown.png') })
+  await page.waitForFunction(() => !window.t.isOpen(), null, { timeout: 6000 })
+  const elapsed = Date.now() - started
+  let ev = await h.events()
+  check(
+    mode,
+    'a navigation counts down on its button, announced once, then runs by itself',
+    counting.text === 'Go in 3… ↵' &&
+      counting.animation === 'fb-countdown' &&
+      counting.live === 'Opening Settings in 3 seconds. Press Escape to stop.' &&
+      counting.keys === 'Tab chips, Esc stop' &&
+      ev.navigations.join() === '#/settings' &&
+      ev.corrections.length === 0 &&
+      elapsed >= 3000 &&
+      elapsed < 4500,
+    `${JSON.stringify(counting)} | ${elapsed} ms | ${ev.navigations.join(', ')}`,
+  )
+
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await h.reset()
+  await h.openBar()
+  await h.ask('open the billing page')
+  await page.locator('button.primary[data-countdown]').waitFor()
+  const reduced = await state()
+  await page.keyboard.press('Escape')
+  const stopped = await state()
+  await page.waitForTimeout(3500)
+  const waited = await h.events()
+  await page.keyboard.press('Enter')
+  await page.waitForFunction(() => !window.t.isOpen())
+  ev = await h.events()
+  await page.emulateMedia({ reducedMotion: null })
+  check(
+    mode,
+    'with reduced motion the countdown is text only',
+    reduced.text === 'Go in 3… ↵' && reduced.animation === 'none' && reduced.image === 'none',
+    JSON.stringify(reduced),
+  )
+  check(
+    mode,
+    'Escape stops the countdown without closing, and Enter then runs it',
+    stopped.open && stopped.text === 'Go ↵' && stopped.keys === 'Tab chips, Esc close' && waited.navigations.length === 0 && ev.navigations.join() === '#/billing',
+    `${JSON.stringify(stopped)} | after waiting: ${waited.navigations.join()} | after Enter: ${ev.navigations.join()}`,
+  )
+
+  const csp = await h.t(() => window.cspViolations)
+  check(mode, 'no CSP violations or page errors (auto-run)', csp.length === 0 && h.errors.length === 0, [...csp, ...h.errors].join(' | ').slice(0, 300))
+  await page.close()
+}
+
 /** The checks with the page's own ⌘K palette on, as in Plane today. */
 async function withPagePalette(browser, mode) {
   const h = await openPage(browser, mode)
@@ -650,6 +724,7 @@ try {
     await withPagePalette(browser, mode)
     await withoutPagePalette(browser, mode)
     await withStates(browser, mode)
+    await withAutoRun(browser, mode)
     await withTriggers(browser, mode)
   }
   await withScriptTag(browser)

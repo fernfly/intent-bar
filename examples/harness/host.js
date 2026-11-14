@@ -12,8 +12,9 @@
  * The fake model answers by pattern: "weather" is out of scope, "slow down"
  * is rate limited, "move backlog … to sam lee" is a bulk update that
  * confirms, "unassigned …" is a filter the page's own list can't show, so
- * its run returns the rows, and anything else lists work items ("… for sam"
- * finds two Sams).
+ * its run returns the rows, "open the settings page" is a navigation that
+ * runs by itself after a countdown, and anything else lists work items
+ * ("… for sam" finds two Sams).
  */
 ;(() => {
   const params = new URLSearchParams(location.search)
@@ -132,7 +133,7 @@
         (args.assignee === undefined || w.assignee === args.assignee),
     )
 
-  /** Stands in for the infer endpoint, by pattern: weather is out of scope, "slow down" is rate limited, "move … to …" is a bulk update, "unassigned" lists the unassigned, and anything else lists work items. */
+  /** Stands in for the infer endpoint, by pattern: weather is out of scope, "slow down" is rate limited, "move … to …" is a bulk update, "unassigned" lists the unassigned, "open the … page" goes to a page, and anything else lists work items. */
   const transport = {
     async infer({ utterance }) {
       events.inferCalls++
@@ -142,6 +143,11 @@
       const move = /move (\w+) .*to ([\w ]+)$/i.exec(utterance)
       if (move) {
         return { calls: [{ name: 'bulk_update_work_items', arguments: { state: move[1], set_assignee: move[2] } }], latency_ms: 91, log_ref: 'fake-move' }
+      }
+      const open = /^(?:open|go to|show)(?: the)? (.+?)(?: page)?$/i.exec(utterance.trim())
+      const page = open && slugOf(open[1])
+      if (page && pageSlugs.includes(page)) {
+        return { calls: [{ name: 'open_page', arguments: { page } }], latency_ms: 64, log_ref: 'fake-open' }
       }
       if (/unassigned/i.test(utterance)) {
         return { calls: [{ name: 'list_work_items', arguments: { assignee: 'none' } }], latency_ms: 77, log_ref: 'fake-unassigned' }
@@ -162,7 +168,17 @@
     'States', 'Estimates', 'Integrations', 'Webhooks', 'API tokens', 'Billing', 'Profile', 'Notifications',
     'Archives', 'Drafts',
   ]
+  /** A page's id, as its href and the `open_page` tool name it. */
+  const slugOf = (label) => label.toLowerCase().replace(/\s+/g, '-')
+  const pageSlugs = pageNames.map(slugOf)
   const hotkeyKeys = params.get('hotkey') ?? 'mod+k'
+
+  /** Goes to an in-page href, the way the host app's router would. */
+  function navigate(href) {
+    events.navigations.push(href)
+    note(`went to ${href}`)
+    location.hash = href.slice(1)
+  }
 
   window.harness = {
     transport,
@@ -170,7 +186,7 @@
     hotkey: params.get('takeover') === '1' ? { keys: hotkeyKeys, takeOver: true } : hotkeyKeys,
     attach: '#attached-search',
     launcher: params.get('launcher') === '1',
-    pages: pageNames.map((label) => ({ label, href: `#/${label.toLowerCase().replace(/\s+/g, '-')}` })),
+    pages: pageNames.map((label) => ({ label, href: `#/${slugOf(label)}` })),
     context: () => ({ current: { member: members[3], cycle: cycles[1] } }),
     values: {
       member: async (q) => {
@@ -180,6 +196,14 @@
       cycle: (q) => cycles.filter((c) => c.label.toLowerCase().includes(q.toLowerCase())),
     },
     tools: {
+      open_page: {
+        kind: 'navigate',
+        label: 'Open page',
+        args: {
+          page: { label: 'page', enum: pageSlugs, optionLabels: Object.fromEntries(pageNames.map((label) => [slugOf(label), label])) },
+        },
+        run: (args) => navigate(`#/${args.page}`),
+      },
       list_work_items: {
         kind: 'filter',
         label: 'Work items',
@@ -244,11 +268,7 @@
         },
       },
     },
-    navigate: (href) => {
-      events.navigations.push(href)
-      note(`went to ${href}`)
-      location.hash = href.slice(1)
-    },
+    navigate,
   }
 
   html.dataset.vars = params.get('vars') ?? 'propel'

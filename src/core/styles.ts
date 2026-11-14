@@ -141,6 +141,26 @@ button:disabled { opacity: 0.5; cursor: default; }
 button[data-danger] { color: var(--fb-danger); }
 button.primary { color: var(--fb-on-accent); background: var(--fb-accent); border-color: var(--fb-accent); }
 button.primary kbd { opacity: 0.8; }
+button.primary[data-countdown] {
+  background-image: linear-gradient(var(--fb-fill), var(--fb-fill));
+  background-repeat: no-repeat;
+  background-size: 0% 100%;
+  animation: fb-countdown var(--fb-countdown, 3s) linear forwards;
+  --fb-fill: color-mix(in srgb, var(--fb-on-accent) 24%, transparent);
+}
+@keyframes fb-countdown { to { background-size: 100% 100%; } }
+@media (prefers-reduced-motion: reduce) {
+  button.primary[data-countdown] { animation: none; background-image: none; }
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
 .result { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 12px 12px; }
 .result-line { margin: 0; font-size: 13px; }
 .result-line[data-tone="wait"] { color: var(--fb-muted); }
