@@ -165,20 +165,21 @@ describe('IntentBar', () => {
     await bar().findByRole('group', { name: 'Parsed request' })
   })
 
-  it('cycles Tab through the input, chips and buttons, and wraps both ways', async () => {
+  it('cycles Tab through the input, chips, buttons and footer link, and wraps both ways', async () => {
     const { user } = await openBar()
     await parse(user)
     const input = active()
     const buttons = bar().getAllByRole('button')
     expect(buttons.map((b) => b.textContent)).toEqual(['Work items', 'statebacklog', 'assigneePriya', 'Apply filter ↵'])
-    for (const button of buttons) {
+    const stops = [...buttons, bar().getByRole('link', { name: /Powered by Fernfly/ })]
+    for (const stop of stops) {
       await user.keyboard('{Tab}')
-      expect(active()).toBe(button)
+      expect(active()).toBe(stop)
     }
     await user.keyboard('{Tab}')
     expect(active()).toBe(input)
     await user.keyboard('{Shift>}{Tab}{/Shift}')
-    expect(active()).toBe(buttons.at(-1))
+    expect(active()).toBe(stops.at(-1))
   })
 
   it('opens a chip’s dropdown, which takes Escape before the bar', async () => {

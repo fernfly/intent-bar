@@ -42,11 +42,17 @@ const ASK = '\u0000ask'
 /** The main list's filter: the Ask item always scores highest, so it stays pinned first. */
 const filter = (value: string, search: string, keywords?: string[]) => (value === ASK ? 1 : labelFilter(value, search, keywords))
 
+/** What a failed sentence tells the person typing: what they can still do, never how the bar works. */
 const NOTICES: Record<FailureReason, string> = {
   rate_limited: 'Too many requests right now. Search still works.',
-  quota_exceeded: 'This app has used up its model requests for today. Search still works.',
-  unavailable: 'The model is unavailable right now. Search still works.',
+  quota_exceeded: "This app has reached today's limit for sentences. Search still works.",
+  unavailable: "Sentences aren't available right now. Search still works.",
 }
+
+const FERNFLY_URL = 'https://fernfly.com'
+
+/** Keeps focus in the input when the footer link is clicked. The click itself still opens the link. */
+const keepFocus = (e: ReactMouseEvent) => e.preventDefault()
 
 const NO_PICKS: Readonly<Record<string, Pick>> = {}
 
@@ -68,7 +74,6 @@ interface Draft {
   model?: Call
   call: Call
   picks: Readonly<Record<string, Pick>>
-  latency?: number
 }
 
 export interface OverlayProps {
@@ -205,7 +210,6 @@ export function Overlay(props: OverlayProps) {
     setNotice(null)
     setEditor(null)
     setDraft(null)
-    const started = performance.now()
     try {
       const res = await transport.infer({ utterance, meta: { source: 'intent-bar' } })
       if (id !== requestId.current) return
@@ -215,7 +219,7 @@ export function Overlay(props: OverlayProps) {
         setPhase('out_of_scope')
         return
       }
-      setDraft({ utterance, logRef: res.log_ref, model: call, call, picks: {}, latency: Math.round(performance.now() - started) })
+      setDraft({ utterance, logRef: res.log_ref, model: call, call, picks: {} })
       setPhase('parsed')
     } catch (err) {
       if (id !== requestId.current) return
@@ -417,17 +421,6 @@ export function Overlay(props: OverlayProps) {
   const more = !action && ready?.count !== undefined ? ready.count - sample.length : 0
   const undoable = action ? action.undoable : ready?.undoable
 
-  const footer =
-    phase === 'search'
-      ? 'Instant search, no model call'
-      : phase === 'loading'
-        ? 'Model call'
-        : phase === 'out_of_scope'
-          ? 'Saved for review'
-          : draft?.latency !== undefined
-            ? `Parsed in ${draft.latency} ms`
-            : 'No model call'
-
   return (
     <div className="overlay" onKeyDown={stop} onKeyUp={stop} onMouseDown={onMouseDown} onClick={onBackdropClick}>
       <div
@@ -508,7 +501,8 @@ export function Overlay(props: OverlayProps) {
           )}
         </CommandRoot>
 
-        {phase === 'loading' && <p className="note">Asking the model…</p>}
+        {/* Always mounted, so screen readers are already watching it when the line appears. */}
+        <div aria-live="polite">{phase === 'loading' && <p className="note">Working on it…</p>}</div>
 
         {phase === 'parsed' && draft && (
           <>
@@ -591,8 +585,24 @@ export function Overlay(props: OverlayProps) {
         )}
 
         <footer className="footer">
-          <span>{footer}</span>
           <span>
+            <a
+              className="brand"
+              href={FERNFLY_URL}
+              target="_blank"
+              rel="noopener"
+              aria-label="Powered by Fernfly (opens in a new tab)"
+              onMouseDown={keepFocus}
+            >
+              Powered by Fernfly
+            </a>
+            {phase === 'out_of_scope' && (
+              <>
+                <span aria-hidden="true"> · </span>Saved for review
+              </>
+            )}
+          </span>
+          <span className="footer-keys">
             {phase === 'parsed' && (
               <>
                 <kbd>Tab</kbd> chips,{' '}
