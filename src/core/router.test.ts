@@ -21,9 +21,32 @@ describe('relatedPages', () => {
     { label: 'Settings', href: '/settings' },
   ]
 
+  const labels = (utterance: string, list: { label: string; href: string }[] = pages) =>
+    relatedPages(utterance, list).map((p) => p.label)
+
   it('finds pages that share a word with the sentence', () => {
-    expect(relatedPages('show cycle velocity for projects', pages).map((p) => p.label)).toEqual(['Cycles', 'Projects'])
-    expect(relatedPages('what is the weather', pages)).toEqual([])
+    expect(labels('show cycle velocity for projects')).toEqual(['Cycles', 'Projects'])
+    expect(labels('what is the weather')).toEqual([])
+  })
+
+  it('never matches a label inside a longer word, either way round', () => {
+    const api = [{ label: 'API', href: '/#api' }]
+    expect(labels('what is the capital of France', api)).toEqual([])
+    expect(labels('show me the apis', api)).toEqual(['API'])
+    expect(labels('what is a setting sun', [{ label: 'Set', href: '/set' }])).toEqual([])
+    expect(labels('open sets', [{ label: 'Settings', href: '/settings' }])).toEqual([])
+  })
+
+  it('matches a plural to its singular, both ways', () => {
+    const list = [
+      { label: 'Upcoming webinars', href: '/webinars' },
+      { label: 'Privacy policy', href: '/privacy' },
+      { label: 'Class', href: '/class' },
+    ]
+    expect(labels('book a webinar on pricing', list)).toEqual(['Upcoming webinars'])
+    expect(labels('show me the policies', list)).toEqual(['Privacy policy'])
+    expect(labels('which classes run today', list)).toEqual(['Class'])
+    expect(labels('cycle?')).toEqual(['Cycles'])
   })
 })
 
