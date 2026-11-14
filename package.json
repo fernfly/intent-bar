@@ -1,6 +1,6 @@
 {
   "name": "@fernfly/intent-bar",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "An intent bar for web apps: a sentence becomes editable chips with a live preview, and your app runs the result.",
   "license": "MIT",
   "repository": {
